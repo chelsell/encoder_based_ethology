@@ -1,0 +1,13 @@
+Bootstrap: docker
+From: ubuntu:24.04
+%post
+    set -eux
+    apt-get update && apt-get install -y ca-certificates curl xz-utils
+    cd /usr/local/bin
+    curl -L -o ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+    tar -xf ffmpeg.tar.xz --strip-components=1
+    chmod +x ffmpeg ffprobe
+    rm -f ffmpeg.tar.xz
+%runscript
+    exec ffmpeg "$@"
+

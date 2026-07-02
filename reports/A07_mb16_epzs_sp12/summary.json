@@ -1,0 +1,14 @@
+{
+  "number_of_frames": 1124,
+  "number_of_vector_rows": 56200,
+  "median_vectors_per_frame": 50.0,
+  "median_frame_sum_magnitude_px": 6.0,
+  "p95_frame_sum_magnitude_px": 163.58988201884998,
+  "fraction_frames_with_zero_vectors": 0.0,
+  "filtergraph": {
+    "effective_filtergraph": "format=gray,mestimate=method=epzs:mb_size=16:search_param=12",
+    "method": "epzs",
+    "mb_size": 16,
+    "search_param": 12
+  }
+}

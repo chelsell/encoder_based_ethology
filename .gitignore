@@ -1,0 +1,41 @@
+# Build products
+/build/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json
+
+# Generated sidecars, renders, reports, and experiment outputs
+/outputs
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.jsonl
+*.parquet
+*.csv
+*.tsv
+*.tar
+*.tar.gz
+*.zip
+*.sif
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local environment and editor state
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store

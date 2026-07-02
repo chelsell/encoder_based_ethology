@@ -1,0 +1,75 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%labels
+    Author encoder_based_analysis
+    Description FFmpeg-libav build/runtime image for mestimate-sidecar
+
+%files
+    CMakeLists.txt /opt/mestimate-sidecar/source/CMakeLists.txt
+    include /opt/mestimate-sidecar/source/include
+    src /opt/mestimate-sidecar/source/src
+    tests /opt/mestimate-sidecar/source/tests
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        build-essential \
+        cmake \
+        ffmpeg \
+        pkg-config \
+        python3 \
+        python3-numpy \
+        zlib1g \
+        zlib1g-dev \
+        libavformat-dev \
+        libavcodec-dev \
+        libavfilter-dev \
+        libavutil-dev \
+        libswscale-dev
+
+    cmake -S /opt/mestimate-sidecar/source -B /opt/mestimate-sidecar/build \
+        -DCMAKE_BUILD_TYPE=Release
+    cmake --build /opt/mestimate-sidecar/build --parallel
+    install -Dm755 \
+        /opt/mestimate-sidecar/build/mestimate-sidecar \
+        /opt/mestimate-sidecar/bin/mestimate-sidecar
+
+    /opt/mestimate-sidecar/bin/mestimate-sidecar --version
+    ffmpeg -hide_banner -filters | grep -E '[[:space:]]mestimate[[:space:]]'
+
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/mestimate-sidecar/bin:$PATH
+    export FFMPEG_BIN=/usr/bin/ffmpeg
+
+%runscript
+    exec /opt/mestimate-sidecar/bin/mestimate-sidecar "$@"
+
+%test
+    set -eux
+    /opt/mestimate-sidecar/bin/mestimate-sidecar --version
+    ffmpeg -hide_banner -filters | grep -E '[[:space:]]mestimate[[:space:]]'
+    cd /opt/mestimate-sidecar/source
+    FFMPEG_BIN=/usr/bin/ffmpeg \
+        MESTIMATE_SIDECAR_BIN=/opt/mestimate-sidecar/bin/mestimate-sidecar \
+        tests/test_synthetic_translation.sh
+
+%help
+    This image contains a baked mestimate-sidecar binary linked against the
+    image's Ubuntu FFmpeg development libraries. Run it with:
+
+      apptainer run --bind "$PWD":/work mestimate_sidecar.sif \
+        --input /work/data/A07.mp4 \
+        --output-dir /work/outputs/A07_container \
+        --method epzs \
+        --mb-size 16 \
+        --search-param 12
+
+    The image also includes /usr/bin/ffmpeg for synthetic fixture creation and
+    diagnostic codecview overlays.
