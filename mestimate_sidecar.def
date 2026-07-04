@@ -4,6 +4,8 @@ From: ubuntu:24.04
 %labels
     Author encoder_based_analysis
     Description FFmpeg-libav build/runtime image for mestimate-sidecar
+    PipelineScope sidecar-only-not-full-plate-archival-pipeline
+    BaseImage ubuntu:24.04
 
 %files
     CMakeLists.txt /opt/mestimate-sidecar/source/CMakeLists.txt

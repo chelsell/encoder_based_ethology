@@ -57,6 +57,14 @@ numpy
 opencv-python
 ```
 
+## Optional Python test dependency
+
+Python unit tests use `pytest`:
+
+```bash
+python -m pip install -r requirements-test.txt
+```
+
 ## Build
 
 ```bash
@@ -110,6 +118,99 @@ scripts/test_sidecar_sif.sh
 This first runs the image `%test`, then runs the synthetic translation test
 inside the image with `FFMPEG_BIN=/usr/bin/ffmpeg`.
 
+## Run sidecar extraction as a Slurm array
+
+For cluster execution, use a SIF or sandbox that contains both FFmpeg and the
+`mestimate-sidecar` binary. A generic FFmpeg-only SIF is not enough unless the
+sidecar binary is also present and linked against compatible FFmpeg libraries.
+The repository image definition, [mestimate_sidecar.def](mestimate_sidecar.def),
+builds the sidecar inside the image and is the intended production model.
+
+Create a manifest from a directory of source videos:
+
+```bash
+python scripts/make_sidecar_slurm_manifest.py \
+  --input-root /media/ssd1/sauronx_videos/video_selection_2025-09-18 \
+  --pattern '*.mkv' \
+  --output-root /scratch/$USER/mestimate_sidecars \
+  --manifest manifests/mestimate_sidecar_jobs.csv \
+  --vector-output none \
+  --vector-format bin \
+  --force
+```
+
+The manifest has one row per Slurm array task. Submit it with the task count
+printed by the manifest command:
+
+```bash
+mkdir -p slurm_logs
+MANIFEST=manifests/mestimate_sidecar_jobs.csv \
+IMAGE=/path/to/mestimate_sidecar.sif \
+sbatch --array=1-N scripts/sidecar_array.sbatch
+```
+
+Each task reads its row using `SLURM_ARRAY_TASK_ID`, creates the output
+directory on the host, and runs:
+
+```text
+apptainer run --cleanenv --bind <input_parent>:<input_parent> --bind <output_dir>:<output_dir> <image> ...
+```
+
+If your cluster does not auto-bind a needed filesystem, pass extra bind paths:
+
+```bash
+SIDECAR_EXTRA_BIND_ARGS="--bind /media/ssd1 --bind /scratch" \
+MANIFEST=manifests/mestimate_sidecar_jobs.csv \
+IMAGE=/path/to/mestimate_sidecar.sif \
+sbatch --array=1-N scripts/sidecar_array.sbatch
+```
+
+To debug a single task without Slurm:
+
+```bash
+python scripts/run_sidecar_manifest_task.py \
+  --manifest manifests/mestimate_sidecar_jobs.csv \
+  --task-index 1 \
+  --image /path/to/mestimate_sidecar.sif \
+  --dry-run
+```
+
+Each output directory receives `sidecar_slurm_task.json` with the manifest row,
+Apptainer command, bind paths, Slurm IDs, elapsed time, and return code.
+
+For archival runs that first split plate videos into well videos, see
+[docs/well_first_archival_sidecar.md](docs/well_first_archival_sidecar.md).
+The cluster scheduling unit should be the source plate video, not one full
+source decode per well. Use `scripts/make_well_archival_manifest.py` to create a
+plate-job manifest plus a per-well output/provenance manifest from the exported
+independent ROI-record table. The ROI-solution table is per source video and is
+recorded as provenance with `--roi-solution-table`. The sidecar extractor should
+normally run on the well crop with
+`--vector-output none`; keep plate-level common-mode/reference-region QC as a
+separate companion product. See
+[docs/cluster_reproducibility.md](docs/cluster_reproducibility.md) and
+[docs/sge_archival_orchestration.md](docs/sge_archival_orchestration.md) before
+production-scale cluster runs. Wynton-specific container rebuild and disk budget
+notes are in
+[docs/wynton_container_and_disk_budget.md](docs/wynton_container_and_disk_budget.md).
+The cluster does not need the full local working tree; use
+`scripts/make_wynton_deploy_bundle.sh` and the audit in
+[docs/repo_cleaning_audit.md](docs/repo_cleaning_audit.md) to stage a minimal
+source bundle.
+
+```bash
+python scripts/make_well_archival_manifest.py \
+  --source-catalog /home/cole/code/ROI_improvement/data/catalog/valar_96_well_source_catalog.csv \
+  --roi-table /home/cole/code/ROI_improvement/data/roi_records/valar_96_well_affine_analysis100_roi_records.csv \
+  --roi-solution-table /home/cole/code/ROI_improvement/data/roi_solutions/valar_96_well_analysis100/valar_96_well_analysis100_roi_solutions.csv \
+  --roi-repo /home/cole/code/ROI_improvement \
+  --fail-dirty-roi-repo \
+  --skip-missing-source-path \
+  --image /path/to/archival_pipeline.sif \
+  --output-root /wynton/scratch/$USER/encoder_based_ethology/valar_96_well_analysis100/runs \
+  --well-manifest /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/well_archival_outputs.csv
+```
+
 If image building fails before reading the def file with an error about
 `newuidmap` or `newgidmap`, the host Apptainer fakeroot installation needs
 administrator attention. On a correctly configured host these helpers are owned
@@ -156,6 +257,77 @@ This writes:
 
 Existing sidecars are not replaced unless `--force` or `--overwrite` is passed.
 
+## Sample vector rows at extraction time
+
+Frame summaries are always computed from all vectors emitted by `mestimate`.
+They also include a lag-1 cd-style grayscale frame-difference channel:
+`frame_diff_changed_pixels` counts pixels with
+`abs(current_gray - previous_gray) > frame_diff_threshold`, default threshold
+10. Vector rows are optional. For a storage-saving first-pass extraction, keep
+the complete frame summaries and skip vector rows:
+
+```bash
+./build/mestimate-sidecar \
+  --input data/A07.mp4 \
+  --output-dir outputs/A07_summary_only \
+  --method epzs \
+  --mb-size 16 \
+  --search-param 12 \
+  --frame-diff-threshold 10 \
+  --frame-output csv \
+  --summary-float-precision 6 \
+  --vector-output none
+```
+
+For audit/debug runs, vector rows can be written as a deterministic sampled
+subset. Use binary format when footprint matters:
+
+```bash
+./build/mestimate-sidecar \
+  --input data/A07.mp4 \
+  --output-dir outputs/A07_sampled_vectors \
+  --method epzs \
+  --mb-size 16 \
+  --search-param 12 \
+  --vector-output sampled \
+  --vector-format bin \
+  --vector-source past \
+  --vector-frame-stride 5 \
+  --vector-spatial-stride 2 \
+  --vector-min-magnitude 0.25
+```
+
+The current dials are deliberately simple: temporal stride, regular spatial
+lattice stride, source direction, and optional magnitude floor. They do not cap
+the number of vectors in an active frame, because that would impose an artificial
+ceiling on high-activity wells. Use `--vector-output all` to retain the complete
+vector table for a smaller audit set, preferably with `--vector-format bin`.
+Output mode, storage format, sampling settings, and raw versus retained vector
+counts are recorded in
+`<stem>.mestimate-v1.metadata.json`.
+
+`--frame-output csv` with `--summary-float-precision 6` is currently the best
+tested storage/speed compromise. `--frame-output bin` is available for
+experiments, but on the current small benchmark it did not beat compact CSV
+under gzip. For high-volume vector rows, `--vector-format bin` writes a
+fixed-width `.vectors.bin.gz` stream with exact integer vector fields and
+float32 convenience time/magnitude fields. CSV vectors remain useful for
+inspection and small fixtures. The precision setting applies to CSV frame
+summary output only; binary frame summaries store float32 summary values plus
+exact integer counts.
+
+FFmpeg also has filters such as `scdet`, `signalstats`, `entropy=mode=diff`,
+`tblend`, `freezedetect`, and `blackframe` that can help select frames or windows
+for denser vector retention. They provide frame-level image-dynamics metadata,
+not per-vector match confidence, so they are best treated as later gating/QC
+signals rather than a replacement for vector-level residuals.
+
+To measure sidecar cost relative to AV1 transcode cost on a sample:
+
+```bash
+RUNS=3 scripts/benchmark.sh data/A07.mp4 outputs/benchmark_A07
+```
+
 ## Validate
 
 The synthetic validation script also needs an FFmpeg CLI on `PATH` to create the
@@ -182,6 +354,69 @@ python scripts/inspect_sidecar.py \
 
 The report includes frame traces, histograms, top-motion frames, and a compact
 JSON summary.
+
+## Integrate vectors into compact MV features
+
+The raw vector table is useful for audit and debugging, but routine analyses
+should usually consume temporally integrated features. Generate frame-level and
+fixed-bin summaries from an existing sidecar:
+
+```bash
+python scripts/integrate_mestimate_sidecar.py \
+  --frames outputs/A07_mb16_epzs_sp12/A07.mestimate-v1.frames.csv.gz \
+  --vectors outputs/A07_mb16_epzs_sp12/A07.mestimate-v1.vectors.csv.gz \
+  --metadata outputs/A07_mb16_epzs_sp12/A07.mestimate-v1.metadata.json \
+  --output-dir outputs/A07_mb16_epzs_sp12/derived_mv_features \
+  --vector-source past \
+  --bin-ms 50 100 250
+```
+
+This writes:
+
+```text
+<stem>.mv-features-v1.frames.csv.gz
+<stem>.mv-features-v1.bin-50ms.csv.gz
+<stem>.mv-features-v1.bin-100ms.csv.gz
+<stem>.mv-features-v1.bin-250ms.csv.gz
+<stem>.mv-features-v1.metadata.json
+```
+
+The compact feature schema is documented in
+[docs/mv_features_v1_schema.md](docs/mv_features_v1_schema.md). The current
+implementation is deliberately post-hoc: use it to stabilize feature definitions
+before moving summary-only emission into the C extractor or containerized
+transcode path.
+
+To integrate every sidecar under a directory and get a size/runtime manifest:
+
+```bash
+python scripts/integrate_sidecar_tree.py \
+  --input-root outputs/example_mv_bouts/sidecars \
+  --output-root outputs/example_mv_bouts/derived_mv_features \
+  --vector-source past \
+  --bin-ms 50 100 250
+```
+
+This preserves the input directory layout under `--output-root` and writes
+`mv_feature_batch_manifest.csv`, `mv_feature_batch_missing.csv`, and
+`mv_feature_batch_summary.json`. The manifest includes source bytes, derived
+bytes, elapsed seconds, skipped outputs, and missing vector tables.
+
+## Import cliptriage annotation decisions
+
+Human well-clip labels from the sibling `well_annotation` project can be
+imported from its SQLite database without starting the annotation app:
+
+```bash
+python scripts/import_cliptriage_annotations.py \
+  --database /home/cole/code/well_annotation/data/annotations/cliptriage.sqlite \
+  --output-dir data/annotations/cliptriage_import
+```
+
+This writes append-only history, current latest labels, and per-clip label
+summaries with source video, well, frame/time window, ROI, and sampling-stratum
+provenance. See
+[docs/cliptriage_annotation_import.md](docs/cliptriage_annotation_import.md).
 
 ## Render a sidecar-derived overlay
 

@@ -1,5 +1,6 @@
 # Build products
 /build/
+/build-*/
 /cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
@@ -9,6 +10,11 @@ compile_commands.json
 
 # Generated sidecars, renders, reports, and experiment outputs
 /outputs
+/reports/
+/mestimate_sidecar.sandbox/
+/mestimate_sidecar.sandbox.*/
+/encoder_based_ethology_*.tar.gz
+/encoder_based_ethology_*.manifest.json
 *.mp4
 *.mov
 *.avi

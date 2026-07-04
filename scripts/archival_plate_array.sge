@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+#$ -S /bin/bash
+#$ -cwd
+#$ -N well-archive
+#$ -j y
+#$ -o sge_logs
+#$ -pe smp 1
+#$ -l h_rt=24:00:00
+#$ -l mem_free=6G
+#$ -l scratch=200G
+#$ -r y
+#
+# Submit with:
+#
+#   qsub -t 1-N scripts/archival_plate_array.sge
+
+set -euo pipefail
+
+REPO_DIR="${REPO_DIR:-$PWD}"
+PLATE_MANIFEST="${PLATE_MANIFEST:?Set PLATE_MANIFEST to plate_archival_jobs.csv}"
+WELL_MANIFEST="${WELL_MANIFEST:?Set WELL_MANIFEST to well_archival_outputs.csv}"
+STAGED_INPUT_ROOT="${STAGED_INPUT_ROOT:-}"
+IMAGE="${IMAGE:-}"
+APPTAINER_BIN="${APPTAINER_BIN:-apptainer}"
+APPTAINER_EXTRA_BIND="${APPTAINER_EXTRA_BIND:-}"
+FFMPEG_BIN="${FFMPEG_BIN:-ffmpeg}"
+FFPROBE_BIN="${FFPROBE_BIN:-ffprobe}"
+ENCODER="${ENCODER:-libaom-av1}"
+CRF="${CRF:-35}"
+PRESET="${PRESET:-8}"
+RUN_SIDECAR="${RUN_SIDECAR:-0}"
+FORCE="${FORCE:-0}"
+CHUNK_SIZE="${CHUNK_SIZE:-1}"
+
+mkdir -p "$REPO_DIR/sge_logs"
+
+args=(
+  python3 scripts/run_archival_plate_task.py
+  --plate-manifest "$PLATE_MANIFEST"
+  --well-manifest "$WELL_MANIFEST"
+  --staged-input-root "$STAGED_INPUT_ROOT"
+  --work-root "${TMPDIR:-}"
+  --ffmpeg "$FFMPEG_BIN"
+  --ffprobe "$FFPROBE_BIN"
+  --encoder "$ENCODER"
+  --crf "$CRF"
+  --preset "$PRESET"
+  --chunk-size "$CHUNK_SIZE"
+)
+
+if [[ "$RUN_SIDECAR" == "1" ]]; then
+  args+=(--run-sidecar)
+fi
+if [[ "$FORCE" == "1" ]]; then
+  args+=(--force)
+fi
+
+cd "$REPO_DIR"
+
+if [[ -n "$IMAGE" ]]; then
+  bind_args=(--bind "$REPO_DIR:$REPO_DIR")
+  if [[ -n "$STAGED_INPUT_ROOT" ]]; then
+    bind_args+=(--bind "$STAGED_INPUT_ROOT:$STAGED_INPUT_ROOT")
+  fi
+  if [[ -n "${TMPDIR:-}" ]]; then
+    bind_args+=(--bind "$TMPDIR:$TMPDIR")
+  fi
+  if [[ -n "$APPTAINER_EXTRA_BIND" ]]; then
+    bind_args+=(--bind "$APPTAINER_EXTRA_BIND")
+  fi
+  "$APPTAINER_BIN" exec --cleanenv "${bind_args[@]}" "$IMAGE" "${args[@]}"
+else
+  "${args[@]}"
+fi

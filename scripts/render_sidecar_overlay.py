@@ -2,6 +2,9 @@
 import argparse
 import math
 import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 try:
     import cv2
@@ -12,6 +15,8 @@ except ModuleNotFoundError as exc:
         "Missing Python visualization dependency. Install the optional "
         "visualization packages from requirements-visualize.txt."
     ) from exc
+
+from integrate_mestimate_sidecar import read_vectors  # noqa: E402
 
 
 def color_for_magnitude(mag, high):
@@ -85,10 +90,10 @@ def frame_passes(summary, args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Render a video overlay from mestimate-sidecar vector CSV data."
+        description="Render a video overlay from mestimate-sidecar vector data."
     )
     parser.add_argument("--input", required=True, help="Original input video.")
-    parser.add_argument("--vectors", required=True, help="*.mestimate-v1.vectors.csv.gz file.")
+    parser.add_argument("--vectors", required=True, help="*.mestimate-v1.vectors.csv.gz or *.mestimate-v1.vectors.bin.gz file.")
     parser.add_argument("--frames", default=None, help="Optional *.mestimate-v1.frames.csv.gz file for labels.")
     parser.add_argument("--output", required=True, help="Output overlay video, usually .mp4.")
     parser.add_argument("--scale", type=int, default=6, help="Integer display scale for small well videos.")
@@ -112,7 +117,7 @@ def main():
         raise SystemExit(f"Output exists; pass --force to replace: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    vectors = pd.read_csv(args.vectors, compression="gzip")
+    vectors = read_vectors(args.vectors)
     vectors = vectors[vectors["magnitude_px"] >= args.min_magnitude].copy()
     if args.max_magnitude is not None:
         vectors = vectors[vectors["magnitude_px"] <= args.max_magnitude].copy()
