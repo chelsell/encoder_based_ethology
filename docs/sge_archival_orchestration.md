@@ -121,6 +121,11 @@ plate. `--max-concurrent` emits SGE `-tc` to cap simultaneously running tasks.
 Larger serial chunks remain supported, but should not be used until per-plate
 runtime and failure recovery are well characterized.
 
+For a real submission, the queue manager creates `<repo-dir>/sge_logs` before
+calling `qsub` and rejects a non-directory at that path. SGE resolves its output
+target before the job wrapper runs, so the directory cannot be created reliably
+from inside the job itself.
+
 `--plate-count` is only needed when printing a dry-run command from a machine
 that cannot read the Wynton manifest path. When running the submit command on
 Wynton after the manifests have been copied, it can be omitted and the script

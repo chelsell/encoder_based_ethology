@@ -6,6 +6,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 from manage_archival_sge_queue import (  # noqa: E402
     cmd_submit,
+    prepare_sge_log_dir,
     qsub_command,
     remote_staged_source_path,
     rsync_collect_command,
@@ -132,6 +133,23 @@ def test_qsub_command_sets_sge_environment():
     assert "ENCODER_THREADS=1" in cmd[6]
     assert "PROGRESS_INTERVAL_SECONDS=30.0" in cmd[6]
     assert cmd[-1] == "scripts/archival_plate_array.sge"
+
+
+def test_prepare_sge_log_dir_precedes_qsub_and_rejects_file(tmp_path):
+    observed = prepare_sge_log_dir(tmp_path)
+
+    assert observed == tmp_path / "sge_logs"
+    assert observed.is_dir()
+
+    other_repo = tmp_path / "other"
+    other_repo.mkdir()
+    (other_repo / "sge_logs").write_text("scheduler output", encoding="utf-8")
+    try:
+        prepare_sge_log_dir(other_repo)
+    except RuntimeError as error:
+        assert "not a directory" in str(error)
+    else:
+        raise AssertionError("expected a non-directory SGE log path to be rejected")
 
 
 def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):

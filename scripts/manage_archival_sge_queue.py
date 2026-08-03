@@ -119,6 +119,14 @@ def qsub_command(args, plate_count):
     return cmd
 
 
+def prepare_sge_log_dir(repo_dir):
+    path = pathlib.Path(repo_dir).resolve() / "sge_logs"
+    if path.exists() and not path.is_dir():
+        raise RuntimeError(f"SGE log path exists but is not a directory: {path}")
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def run_or_print(cmd, dry_run):
     print(shlex.join(cmd))
     if not dry_run:
@@ -166,6 +174,8 @@ def cmd_submit(args):
     else:
         rows = read_csv(args.plate_manifest)
         plate_count = len(rows)
+    if not args.dry_run:
+        prepare_sge_log_dir(args.repo_dir)
     cmd = qsub_command(args, plate_count)
     run_or_print(cmd, args.dry_run)
 
