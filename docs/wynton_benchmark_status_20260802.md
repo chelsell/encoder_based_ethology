@@ -82,6 +82,32 @@ the sidecar. Both tasks published `status: encoding` manifests and advancing
 heartbeats. This confirms liveness observability, not yet a successful EOF
 result.
 
+### Resource-matched retry update
+
+Array `4362860` was canceled after about 22 minutes. Its final persisted
+heartbeats reached frame 5,067 at 3.89 fps for `20171128_161253_S1` and frame
+5,551 at 4.29 fps for `20200115_172207_S10`. This is a one-process/one-thread
+baseline covering only about 3--5% of each source, not an EOF result.
+
+An eight-slot, one-process experiment showed that libaom `-threads 8` does not
+parallelize these approximately 83x81 well encodes: stabilized throughput was
+4.15 fps and scheduler CPU remained near one core. That run was canceled.
+
+Commit `06aa0a4` instead partitions the 96 wells across eight concurrent,
+one-thread FFmpeg processes, each reading the same node-local source and
+encoding 12 wells. The first stabilized sample from job `4362909` showed all
+eight workers advancing at 24.29--29.55 source frames/s, 8:09 accumulated CPU
+in about 84 seconds of wall time, and 2.214G maximum virtual memory. At the
+slowest sampled worker rate, the 17-minute source projects to roughly 70 minutes
+of encoding plus full-decode validation. Job `4362914` applies the same
+configuration to the 25.7-minute source.
+
+These jobs use eight SGE `smp` slots, eight encoder processes, one decoder and
+encoder thread per process, `mem_free=1G` per slot, 20G node-local scratch, and
+external scheduler-log directories. Neither job has reached EOF yet, so this is
+throughput and liveness evidence only; libaom stability and final output
+validation remain open.
+
 Lightweight control operations use `log2.wynton.ucsf.edu`; bulk data does not
 pass through the login node. No SSH tunnel is required for job execution or
 transfer. A persistent SSH ControlMaster is only a monitoring convenience.

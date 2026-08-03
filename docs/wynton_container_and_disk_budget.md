@@ -179,11 +179,14 @@ small waves, not only at the end.
 
 ## Runtime implication
 
-One hour per source video is now a lower bound, not a conservative upper
-estimate. Two of the first one-core 96-way encodes aborted in Ubuntu 24.04's
+One hour per source video is now a lower bound for the original one-process
+tests, not a conservative upper estimate. Two of the first one-core 96-way encodes aborted in Ubuntu 24.04's
 libaom 3.8.2 after approximately 2.0 and 2.4 hours, and another task stopped
 advancing. Those arrays were canceled. No successful full-length runtime has
-yet been measured. If a future measured mean were one hour, the optimistic
+yet been measured. A subsequent eight-process/one-thread-per-process candidate
+advanced eight 12-well groups at approximately 24--30 source fps and projected
+about 70 minutes of encoding for a 17-minute source, before validation. Treat
+that as an early scaling sample until it reaches EOF. If a future measured mean were one hour, the optimistic
 lower-bound relationship would be:
 
 ```text
