@@ -9,7 +9,6 @@ APPTAINER_BIN="${APPTAINER_BIN:-apptainer}"
 APPTAINER_CACHE_ROOT="${APPTAINER_CACHE_ROOT:-/wynton/scratch/$USER/encoder_based_ethology/apptainer-cache}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
 RUN_TEST="${RUN_TEST:-1}"
-BUILD_JOBS="${BUILD_JOBS:-${NSLOTS:-1}}"
 
 cd "$REPO_DIR"
 
@@ -25,7 +24,6 @@ if [[ -z "$IMAGE_NAME" ]]; then
 fi
 
 mkdir -p "$IMAGE_DIR" "$APPTAINER_CACHE_ROOT"
-export BUILD_JOBS
 export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-$APPTAINER_CACHE_ROOT/cache}"
 export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-${TMPDIR:-$APPTAINER_CACHE_ROOT/tmp}}"
 mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
@@ -59,7 +57,6 @@ python3 - \
   "$apptainer_version" \
   "$ffmpeg_version" \
   "$libaom_version" \
-  "$BUILD_JOBS" \
   "$sidecar_version" <<'PY'
 import json
 import pathlib
@@ -76,8 +73,8 @@ payload = {
     "apptainer_version": sys.argv[9],
     "ffmpeg_version": sys.argv[10],
     "libaom_version": sys.argv[11],
-    "build_jobs": int(sys.argv[12]),
-    "sidecar_version": sys.argv[13],
+    "build_jobs": 1,
+    "sidecar_version": sys.argv[12],
 }
 path = pathlib.Path(sys.argv[1])
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

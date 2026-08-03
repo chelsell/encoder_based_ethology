@@ -36,10 +36,9 @@ APPTAINER_CACHE_ROOT=/wynton/scratch/$USER/encoder_based_ethology/apptainer-cach
 scripts/build_wynton_container.sh
 ```
 
-The helper sets container compilation concurrency from SGE `$NSLOTS`, defaulting
-to one outside a parallel job, and records `build_jobs` in the build manifest.
-Request matching scheduler slots rather than allowing CMake to use an entire
-node implicitly.
+The container build fixes CMake compilation concurrency at one and records
+`build_jobs: 1` in the build manifest. This is deliberately conservative on a
+shared development node and prevents CMake from using the entire host.
 
 The helper writes:
 
@@ -51,8 +50,9 @@ The helper writes:
 It records the repository commit, dirty flag, definition-file SHA256, SIF SHA256,
 Apptainer version, FFmpeg version, libaom version, and
 `mestimate-sidecar --version`. The definition downloads libaom 3.13.2 from the
-official AOM source archive, verifies its pinned SHA256, installs the shared
-library, and tests that FFmpeg resolves `/usr/local/lib/libaom.so.3`. By default
+official AOM source archive, verifies a deterministic SHA256 over its sorted
+extracted file tree, installs the shared library, and tests that FFmpeg resolves
+`/usr/local/lib/libaom.so.3`. By default
 the helper refuses to build from a dirty checkout. Set `ALLOW_DIRTY=1` only for
 local debug images that will not be used as production provenance.
 

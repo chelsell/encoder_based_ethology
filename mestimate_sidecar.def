@@ -8,6 +8,7 @@ From: ubuntu:24.04
     BaseImage ubuntu:24.04
     LibaomVersion 3.13.2
     LibaomCommit ad44980d7f3c7a2605c25d51ea96946949000841
+    LibaomSourceTreeSHA256 551238557eccedc2ae987f9dd4660b6351c422e5895c950dfe8b63b5c4b8dfcd
 
 %files
     CMakeLists.txt /opt/mestimate-sidecar/source/CMakeLists.txt
@@ -18,7 +19,6 @@ From: ubuntu:24.04
 %post
     set -eux
     export DEBIAN_FRONTEND=noninteractive
-    BUILD_JOBS="${BUILD_JOBS:-1}"
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -42,10 +42,12 @@ From: ubuntu:24.04
     curl -L --fail --retry 3 \
         -o /tmp/libaom-v3.13.2.tar.gz \
         https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.13.2.tar.gz
-    echo "acf1b95432bf91a3a24c6944a9247ba7f060f539631e53e45ec17f014fc977fc  /tmp/libaom-v3.13.2.tar.gz" \
-        | sha256sum -c -
     mkdir -p /opt/libaom-v3.13.2
     tar -xzf /tmp/libaom-v3.13.2.tar.gz -C /opt/libaom-v3.13.2
+    cd /opt/libaom-v3.13.2
+    find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum \
+        | grep -F "551238557eccedc2ae987f9dd4660b6351c422e5895c950dfe8b63b5c4b8dfcd  -"
+    cd /
     cmake -S /opt/libaom-v3.13.2 -B /opt/libaom-v3.13.2/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=ON \
@@ -53,7 +55,7 @@ From: ubuntu:24.04
         -DENABLE_EXAMPLES=OFF \
         -DENABLE_TESTS=OFF \
         -DENABLE_TOOLS=OFF
-    cmake --build /opt/libaom-v3.13.2/build --parallel "$BUILD_JOBS"
+    cmake --build /opt/libaom-v3.13.2/build --parallel 1
     cmake --install /opt/libaom-v3.13.2/build
     ldconfig
     test "$(pkg-config --modversion aom)" = "3.13.2"
@@ -62,7 +64,7 @@ From: ubuntu:24.04
 
     cmake -S /opt/mestimate-sidecar/source -B /opt/mestimate-sidecar/build \
         -DCMAKE_BUILD_TYPE=Release
-    cmake --build /opt/mestimate-sidecar/build --parallel "$BUILD_JOBS"
+    cmake --build /opt/mestimate-sidecar/build --parallel 1
     install -Dm755 \
         /opt/mestimate-sidecar/build/mestimate-sidecar \
         /opt/mestimate-sidecar/bin/mestimate-sidecar

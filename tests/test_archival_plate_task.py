@@ -46,9 +46,9 @@ def test_archival_container_pins_current_libaom_source_and_digest():
     text = definition.read_text(encoding="utf-8")
 
     assert "refs/tags/v3.13.2.tar.gz" in text
-    assert "acf1b95432bf91a3a24c6944a9247ba7f060f539631e53e45ec17f014fc977fc" in text
+    assert "551238557eccedc2ae987f9dd4660b6351c422e5895c950dfe8b63b5c4b8dfcd" in text
     assert 'test "$(pkg-config --modversion aom)" = "3.13.2"' in text
-    assert 'cmake --build /opt/libaom-v3.13.2/build --parallel "$BUILD_JOBS"' in text
+    assert "cmake --build /opt/libaom-v3.13.2/build --parallel 1" in text
 
 
 def well_rows(tmp_path):
