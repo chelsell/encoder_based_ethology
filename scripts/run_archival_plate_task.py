@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import datetime
 import json
 import os
 import pathlib
@@ -116,12 +117,12 @@ def prepare_local_source(source_path, work_root, source_video_id, dry_run):
     return target, cmd
 
 
-def av1_options(encoder, crf, preset):
+def av1_options(encoder, crf, preset, threads):
     if encoder == "libaom-av1":
-        return ["-c:v", encoder, "-crf", str(crf), "-cpu-used", str(preset)]
+        return ["-c:v", encoder, "-crf", str(crf), "-cpu-used", str(preset), "-threads", str(threads)]
     if encoder == "libsvtav1":
-        return ["-c:v", encoder, "-crf", str(crf), "-preset", str(preset)]
-    return ["-c:v", encoder, "-crf", str(crf)]
+        return ["-c:v", encoder, "-crf", str(crf), "-preset", str(preset), "-threads", str(threads)]
+    return ["-c:v", encoder, "-crf", str(crf), "-threads", str(threads)]
 
 
 def build_crop_filter(well_rows):
@@ -145,8 +146,27 @@ def final_and_partial_paths(well_rows):
     return pairs
 
 
-def build_ffmpeg_command(ffmpeg, source_path, well_rows, encoder, crf, preset, force):
+def build_ffmpeg_command(
+    ffmpeg,
+    source_path,
+    well_rows,
+    encoder,
+    crf,
+    preset,
+    force,
+    encoder_threads=1,
+    progress_path=None,
+    progress_interval_seconds=30.0,
+):
+    if encoder_threads < 1:
+        raise ValueError("encoder_threads must be at least 1")
+    if progress_interval_seconds <= 0:
+        raise ValueError("progress_interval_seconds must be positive")
     cmd = [ffmpeg, "-hide_banner", "-nostdin", "-v", "error"]
+    if progress_path:
+        progress_path = pathlib.Path(progress_path)
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["-stats_period", str(progress_interval_seconds), "-progress", str(progress_path)])
     if force:
         cmd.append("-y")
     else:
@@ -155,7 +175,7 @@ def build_ffmpeg_command(ffmpeg, source_path, well_rows, encoder, crf, preset, f
     for i, (_final, partial) in enumerate(final_and_partial_paths(well_rows)):
         partial.parent.mkdir(parents=True, exist_ok=True)
         cmd.extend(["-map", f"[v{i}]", "-an"])
-        cmd.extend(av1_options(encoder, crf, preset))
+        cmd.extend(av1_options(encoder, crf, preset, encoder_threads))
         cmd.append(str(partial))
     return cmd
 
@@ -342,7 +362,9 @@ def run_sidecars(sidecar_bin, well_rows, force):
 def write_json(path, payload):
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    partial = path.with_name(f"{path.name}.tmp")
+    partial.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    os.replace(partial, path)
 
 
 def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chunk_size=1):
@@ -354,6 +376,7 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
     well_rows = map_well_rows_to_output_dir(manifest_well_rows, local_output_dir)
     log_path = output_dir / "manifest" / "archival_plate_task.json"
     validation_path = output_dir / "manifest" / "archival_validation.json"
+    progress_path = output_dir / "logs" / "ffmpeg_progress.log"
 
     payload = {
         "plate_manifest": str(pathlib.Path(args.plate_manifest).resolve()),
@@ -371,6 +394,9 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "encoder": args.encoder,
         "crf": args.crf,
         "preset": args.preset,
+        "encoder_threads": args.encoder_threads,
+        "progress_interval_seconds": args.progress_interval_seconds,
+        "ffmpeg_progress_path": str(progress_path),
         "validation_mode": args.validation_mode,
         "validation_sentinel_count": args.validation_sentinel_count,
         "max_source_duration_seconds": args.max_source_duration_seconds,
@@ -415,7 +441,18 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
     local_source, source_copy_cmd = prepare_local_source(source_path, work_root, plate_row["source_video_id"], args.dry_run)
     if source_copy_cmd:
         payload["source_copy_command"] = source_copy_cmd
-    cmd = build_ffmpeg_command(args.ffmpeg, local_source, well_rows, args.encoder, args.crf, args.preset, args.force)
+    cmd = build_ffmpeg_command(
+        args.ffmpeg,
+        local_source,
+        well_rows,
+        args.encoder,
+        args.crf,
+        args.preset,
+        args.force,
+        encoder_threads=args.encoder_threads,
+        progress_path=progress_path,
+        progress_interval_seconds=args.progress_interval_seconds,
+    )
     payload["ffmpeg_command"] = cmd
     if args.dry_run:
         payload["status"] = "dry_run"
@@ -423,6 +460,9 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         print(" ".join(cmd))
         return payload
 
+    payload["status"] = "encoding"
+    payload["encoding_started_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    write_json(log_path, payload)
     started = time.monotonic()
     completed = subprocess.run(cmd, check=False)
     payload["ffmpeg_elapsed_seconds"] = round(time.monotonic() - started, 6)
@@ -486,6 +526,8 @@ def main():
     parser.add_argument("--encoder", default="libaom-av1")
     parser.add_argument("--crf", type=int, default=35)
     parser.add_argument("--preset", type=int, default=8)
+    parser.add_argument("--encoder-threads", type=int, default=1)
+    parser.add_argument("--progress-interval-seconds", type=float, default=30.0)
     parser.add_argument(
         "--validation-mode",
         choices=("full-decode", "packet-count", "packet-count-sentinel"),

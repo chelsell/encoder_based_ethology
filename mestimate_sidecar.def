@@ -6,6 +6,8 @@ From: ubuntu:24.04
     Description FFmpeg-libav build/runtime image for mestimate-sidecar
     PipelineScope sidecar-only-not-full-plate-archival-pipeline
     BaseImage ubuntu:24.04
+    LibaomVersion 3.13.2
+    LibaomCommit ad44980d7f3c7a2605c25d51ea96946949000841
 
 %files
     CMakeLists.txt /opt/mestimate-sidecar/source/CMakeLists.txt
@@ -21,7 +23,9 @@ From: ubuntu:24.04
         ca-certificates \
         build-essential \
         cmake \
+        curl \
         ffmpeg \
+        nasm \
         pkg-config \
         python3 \
         python3-numpy \
@@ -34,6 +38,27 @@ From: ubuntu:24.04
         libavutil-dev \
         libswscale-dev
 
+    curl -L --fail --retry 3 \
+        -o /tmp/libaom-v3.13.2.tar.gz \
+        https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.13.2.tar.gz
+    echo "acf1b95432bf91a3a24c6944a9247ba7f060f539631e53e45ec17f014fc977fc  /tmp/libaom-v3.13.2.tar.gz" \
+        | sha256sum -c -
+    mkdir -p /opt/libaom-v3.13.2
+    tar -xzf /tmp/libaom-v3.13.2.tar.gz -C /opt/libaom-v3.13.2
+    cmake -S /opt/libaom-v3.13.2 -B /opt/libaom-v3.13.2/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=ON \
+        -DENABLE_DOCS=OFF \
+        -DENABLE_EXAMPLES=OFF \
+        -DENABLE_TESTS=OFF \
+        -DENABLE_TOOLS=OFF
+    cmake --build /opt/libaom-v3.13.2/build --parallel
+    cmake --install /opt/libaom-v3.13.2/build
+    ldconfig
+    test "$(pkg-config --modversion aom)" = "3.13.2"
+    ldd /usr/bin/ffmpeg | grep -F /usr/local/lib/libaom.so.3
+    rm -rf /opt/libaom-v3.13.2 /tmp/libaom-v3.13.2.tar.gz
+
     cmake -S /opt/mestimate-sidecar/source -B /opt/mestimate-sidecar/build \
         -DCMAKE_BUILD_TYPE=Release
     cmake --build /opt/mestimate-sidecar/build --parallel
@@ -43,6 +68,8 @@ From: ubuntu:24.04
 
     /opt/mestimate-sidecar/bin/mestimate-sidecar --version
     ffmpeg -hide_banner -filters | grep -E '[[:space:]]mestimate[[:space:]]'
+    test "$(pkg-config --modversion aom)" = "3.13.2"
+    ldd /usr/bin/ffmpeg | grep -F /usr/local/lib/libaom.so.3
 
     apt-get clean
     rm -rf /var/lib/apt/lists/*

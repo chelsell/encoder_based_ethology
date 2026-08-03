@@ -44,9 +44,12 @@ The helper writes:
 ```
 
 It records the repository commit, dirty flag, definition-file SHA256, SIF SHA256,
-Apptainer version, FFmpeg version, and `mestimate-sidecar --version`. By default
-it refuses to build from a dirty checkout. Set `ALLOW_DIRTY=1` only for local
-debug images that will not be used as production provenance.
+Apptainer version, FFmpeg version, libaom version, and
+`mestimate-sidecar --version`. The definition downloads libaom 3.13.2 from the
+official AOM source archive, verifies its pinned SHA256, installs the shared
+library, and tests that FFmpeg resolves `/usr/local/lib/libaom.so.3`. By default
+the helper refuses to build from a dirty checkout. Set `ALLOW_DIRTY=1` only for
+local debug images that will not be used as production provenance.
 
 Smoke-test the resulting image in the same path layout used by SGE:
 
@@ -172,9 +175,11 @@ small waves, not only at the end.
 ## Runtime implication
 
 One hour per source video is now a lower bound, not a conservative upper
-estimate: the first five one-core 96-way encodes had not completed after one
-hour at the 2026-08-02 benchmark snapshot. If a future measured mean were one
-hour, the optimistic lower-bound relationship would be:
+estimate. Two of the first one-core 96-way encodes aborted in Ubuntu 24.04's
+libaom 3.8.2 after approximately 2.0 and 2.4 hours, and another task stopped
+advancing. Those arrays were canceled. No successful full-length runtime has
+yet been measured. If a future measured mean were one hour, the optimistic
+lower-bound relationship would be:
 
 ```text
 wall_hours ~= 6481 / C
@@ -204,6 +209,8 @@ Start with a small wave:
 --validation-mode packet-count-sentinel
 --validation-sentinel-count 5
 --max-source-duration-seconds 3600
+--encoder-threads 1
+--progress-interval-seconds 30
 -l mem_free=4G
 -l scratch=20G
 ```

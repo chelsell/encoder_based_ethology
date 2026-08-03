@@ -1,5 +1,7 @@
+import json
 import pathlib
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +17,7 @@ from run_archival_plate_task import (  # noqa: E402
     resolve_source_path,
     rsync_copy_command,
     rsync_tree_command,
+    run_one_plate,
     select_plate_rows_for_chunk,
     sentinel_indices,
     validate_outputs,
@@ -35,6 +38,16 @@ def test_archival_container_installs_rsync_for_local_scratch_copies():
     text = definition.read_text(encoding="utf-8")
 
     assert "        rsync \\\n" in text
+
+
+def test_archival_container_pins_current_libaom_source_and_digest():
+    definition = pathlib.Path(__file__).resolve().parents[1] / "mestimate_sidecar.def"
+
+    text = definition.read_text(encoding="utf-8")
+
+    assert "refs/tags/v3.13.2.tar.gz" in text
+    assert "acf1b95432bf91a3a24c6944a9247ba7f060f539631e53e45ec17f014fc977fc" in text
+    assert 'test "$(pkg-config --modversion aom)" = "3.13.2"' in text
 
 
 def well_rows(tmp_path):
@@ -76,7 +89,19 @@ def test_build_crop_filter_splits_once_and_crops_each_well(tmp_path):
 
 def test_build_ffmpeg_command_maps_all_wells_to_partial_outputs(tmp_path):
     rows = well_rows(tmp_path)
-    cmd = build_ffmpeg_command("ffmpeg", "/stage/runA/source.mkv", rows, "libaom-av1", 35, 8, force=True)
+    progress = tmp_path / "shared" / "logs" / "ffmpeg_progress.log"
+    cmd = build_ffmpeg_command(
+        "ffmpeg",
+        "/stage/runA/source.mkv",
+        rows,
+        "libaom-av1",
+        35,
+        8,
+        force=True,
+        encoder_threads=1,
+        progress_path=progress,
+        progress_interval_seconds=30,
+    )
 
     assert cmd[:5] == ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error"]
     assert "-filter_complex" in cmd
@@ -85,6 +110,90 @@ def test_build_ffmpeg_command_maps_all_wells_to_partial_outputs(tmp_path):
     assert "[v1]" in cmd
     assert str(pathlib.Path(rows[0]["well_archive_path"]).with_name("runA_A01.av1.partial.mkv")) in cmd
     assert cmd.count("-cpu-used") == 2
+    assert cmd.count("-threads") == 2
+    assert cmd.count("1") >= 2
+    assert cmd[cmd.index("-progress") + 1] == str(progress)
+    assert cmd[cmd.index("-stats_period") + 1] == "30"
+    assert progress.parent.is_dir()
+
+
+def test_build_ffmpeg_command_rejects_invalid_thread_and_progress_settings(tmp_path):
+    rows = well_rows(tmp_path)
+
+    with pytest.raises(ValueError, match="encoder_threads"):
+        build_ffmpeg_command("ffmpeg", "source.mkv", rows, "libaom-av1", 35, 8, False, encoder_threads=0)
+    with pytest.raises(ValueError, match="progress_interval"):
+        build_ffmpeg_command(
+            "ffmpeg", "source.mkv", rows, "libaom-av1", 35, 8, False, progress_interval_seconds=0
+        )
+
+
+def test_run_one_plate_publishes_encoding_manifest_before_ffmpeg(tmp_path, monkeypatch):
+    source = tmp_path / "source.mkv"
+    source.write_bytes(b"source")
+    output_dir = tmp_path / "shared" / "runA"
+    plate_manifest = tmp_path / "plates.csv"
+    plate_manifest.write_text(
+        "plate_task_id,source_video_id,source_path,output_dir\n"
+        f"1,runA,{source},{output_dir}\n",
+        encoding="utf-8",
+    )
+    well_manifest = tmp_path / "wells.csv"
+    rows = well_rows(tmp_path / "shared")
+    columns = list(rows[0])
+    well_manifest.write_text(
+        ",".join(columns) + "\n" + "\n".join(",".join(row[column] for column in columns) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        plate_manifest=str(plate_manifest),
+        well_manifest=str(well_manifest),
+        staged_input_root="",
+        work_root="",
+        ffmpeg="ffmpeg",
+        ffprobe="ffprobe",
+        encoder="libaom-av1",
+        crf=35,
+        preset=8,
+        encoder_threads=1,
+        progress_interval_seconds=30.0,
+        validation_mode="full-decode",
+        validation_sentinel_count=2,
+        max_source_duration_seconds=3600.0,
+        run_sidecar=False,
+        sidecar_bin="mestimate-sidecar",
+        force=False,
+        keep_local_work=False,
+        dry_run=False,
+    )
+    observed = {}
+
+    def fake_run(cmd, check=False):
+        manifest = json.loads((output_dir / "manifest" / "archival_plate_task.json").read_text(encoding="utf-8"))
+        observed["status_during_ffmpeg"] = manifest["status"]
+        observed["progress_path"] = cmd[cmd.index("-progress") + 1]
+        for token in cmd:
+            if token.endswith(".partial.mkv"):
+                pathlib.Path(token).write_bytes(b"av1")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("run_archival_plate_task.ffprobe_duration_seconds", lambda *_args: 10.0)
+    monkeypatch.setattr("run_archival_plate_task.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "run_archival_plate_task.validate_outputs",
+        lambda _ffprobe, selected_rows, **_kwargs: [{"well_label": row["well_label"]} for row in selected_rows],
+    )
+
+    result = run_one_plate(
+        args,
+        {"source_video_id": "runA", "source_path": str(source), "output_dir": str(output_dir)},
+        task_index=1,
+        task_count=1,
+    )
+
+    assert observed["status_during_ffmpeg"] == "encoding"
+    assert observed["progress_path"] == str(output_dir / "logs" / "ffmpeg_progress.log")
+    assert result["status"] == "validated"
 
 
 def test_resolve_source_path_uses_staged_root_when_present():

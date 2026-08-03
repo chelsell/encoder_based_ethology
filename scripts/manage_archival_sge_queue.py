@@ -105,6 +105,8 @@ def qsub_command(args, plate_count):
         "ENCODER": args.encoder,
         "CRF": str(args.crf),
         "PRESET": str(args.preset),
+        "ENCODER_THREADS": str(args.encoder_threads),
+        "PROGRESS_INTERVAL_SECONDS": str(args.progress_interval_seconds),
         "VALIDATION_MODE": args.validation_mode,
         "VALIDATION_SENTINEL_COUNT": str(args.validation_sentinel_count),
         "MAX_SOURCE_DURATION_SECONDS": str(args.max_source_duration_seconds),
@@ -246,6 +248,8 @@ def main():
     submit.add_argument("--encoder", default="libaom-av1")
     submit.add_argument("--crf", type=int, default=35)
     submit.add_argument("--preset", type=int, default=8)
+    submit.add_argument("--encoder-threads", type=int, default=1)
+    submit.add_argument("--progress-interval-seconds", type=float, default=30.0)
     submit.add_argument(
         "--validation-mode",
         choices=("full-decode", "packet-count", "packet-count-sentinel"),

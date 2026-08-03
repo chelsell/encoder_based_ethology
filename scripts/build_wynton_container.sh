@@ -41,6 +41,7 @@ image_sha="$(sha256sum "$image_path" | awk '{print $1}')"
 def_sha="$(sha256sum "$DEF_FILE" | awk '{print $1}')"
 apptainer_version="$("$APPTAINER_BIN" --version)"
 ffmpeg_version="$("$APPTAINER_BIN" exec "$image_path" ffmpeg -hide_banner -version | head -n 1)"
+libaom_version="$("$APPTAINER_BIN" exec "$image_path" pkg-config --modversion aom)"
 sidecar_version="$("$APPTAINER_BIN" run "$image_path" --version)"
 dirty="$(git status --porcelain | wc -l | awk '{print $1}')"
 
@@ -55,6 +56,7 @@ python3 - \
   "$dirty" \
   "$apptainer_version" \
   "$ffmpeg_version" \
+  "$libaom_version" \
   "$sidecar_version" <<'PY'
 import json
 import pathlib
@@ -70,7 +72,8 @@ payload = {
     "repo_dirty": sys.argv[8],
     "apptainer_version": sys.argv[9],
     "ffmpeg_version": sys.argv[10],
-    "sidecar_version": sys.argv[11],
+    "libaom_version": sys.argv[11],
+    "sidecar_version": sys.argv[12],
 }
 path = pathlib.Path(sys.argv[1])
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -105,6 +105,8 @@ python scripts/manage_archival_sge_queue.py submit \
   --apptainer-extra-bind /wynton/scratch \
   --chunk-size 1 \
   --max-concurrent 5 \
+  --encoder-threads 1 \
+  --progress-interval-seconds 30 \
   --validation-mode packet-count-sentinel \
   --validation-sentinel-count 5 \
   --max-source-duration-seconds 3600 \
@@ -130,6 +132,16 @@ submissions override these to one slot, `mem_free=4G`, and `scratch=20G` for
 ordinary sources; the p90/p99 compressed-size stress tests request 50G scratch.
 Observed maximum virtual memory is about 2.3G. No production scratch default has
 been frozen because no full-length task had completed at the benchmark snapshot.
+
+Each AV1 output is explicitly limited to `--encoder-threads` threads. Keep this
+at one when requesting one SGE slot. Increasing it requires a matching parallel
+environment slot request and a new throughput benchmark.
+
+Before FFmpeg starts, the worker publishes
+`manifest/archival_plate_task.json` with `status: encoding`. FFmpeg writes a
+shared heartbeat to `logs/ffmpeg_progress.log` at the configured interval. This
+small control-plane write is intentionally on shared scratch so progress remains
+visible while large partial videos stay in job-local `$TMPDIR`.
 
 The default output check is `--validation-mode packet-count-sentinel`: every
 well is checked for AV1 codec, expected geometry, positive and mutually

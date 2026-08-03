@@ -107,6 +107,8 @@ def test_qsub_command_sets_sge_environment():
         encoder="libaom-av1",
         crf=35,
         preset=8,
+        encoder_threads=1,
+        progress_interval_seconds=30.0,
         validation_mode="packet-count-sentinel",
         validation_sentinel_count=5,
         max_source_duration_seconds=3600.0,
@@ -127,6 +129,8 @@ def test_qsub_command_sets_sge_environment():
     assert "VALIDATION_MODE=packet-count-sentinel" in cmd[6]
     assert "VALIDATION_SENTINEL_COUNT=5" in cmd[6]
     assert "MAX_SOURCE_DURATION_SECONDS=3600.0" in cmd[6]
+    assert "ENCODER_THREADS=1" in cmd[6]
+    assert "PROGRESS_INTERVAL_SECONDS=30.0" in cmd[6]
     assert cmd[-1] == "scripts/archival_plate_array.sge"
 
 
@@ -142,6 +146,8 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
         encoder="libaom-av1",
         crf=35,
         preset=8,
+        encoder_threads=1,
+        progress_interval_seconds=30.0,
         validation_mode="packet-count-sentinel",
         validation_sentinel_count=5,
         max_source_duration_seconds=3600.0,
