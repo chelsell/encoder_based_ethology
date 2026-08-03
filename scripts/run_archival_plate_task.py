@@ -194,23 +194,93 @@ def ffprobe_frame_count(ffprobe, path):
     return int(out) if out and out != "N/A" else 0
 
 
-def validate_outputs(ffprobe, well_rows):
+def ffprobe_packet_summary(ffprobe, path):
+    cmd = [
+        ffprobe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-count_packets",
+        "-show_entries",
+        "stream=codec_name,width,height,duration,nb_read_packets",
+        "-of",
+        "json",
+        str(path),
+    ]
+    payload = json.loads(subprocess.check_output(cmd, text=True))
+    streams = payload.get("streams") or []
+    if len(streams) != 1:
+        raise RuntimeError(f"expected one video stream in {path}; observed {len(streams)}")
+    stream = streams[0]
+    return {
+        "codec_name": stream.get("codec_name") or "",
+        "width": int(stream.get("width") or 0),
+        "height": int(stream.get("height") or 0),
+        "duration_s": float(stream["duration"]) if stream.get("duration") not in (None, "N/A") else None,
+        "packet_count": int(stream.get("nb_read_packets") or 0),
+    }
+
+
+def sentinel_indices(n_items, sentinel_count):
+    if n_items <= 0 or sentinel_count <= 0:
+        return set()
+    if sentinel_count >= n_items:
+        return set(range(n_items))
+    if sentinel_count == 1:
+        return {n_items // 2}
+    return {round(i * (n_items - 1) / (sentinel_count - 1)) for i in range(sentinel_count)}
+
+
+def validate_outputs(ffprobe, well_rows, mode="packet-count-sentinel", sentinel_count=5, decode_sentinels=True):
+    if mode not in {"full-decode", "packet-count", "packet-count-sentinel"}:
+        raise ValueError(f"unsupported validation mode: {mode}")
+    sentinels = sentinel_indices(len(well_rows), sentinel_count) if mode == "packet-count-sentinel" else set()
     rows = []
-    for row in well_rows:
+    for index, row in enumerate(well_rows):
         path = pathlib.Path(row["well_archive_path"])
         if not path.exists():
             raise RuntimeError(f"missing well archive: {path}")
-        frames = ffprobe_frame_count(ffprobe, path)
-        if frames <= 0:
-            raise RuntimeError(f"ffprobe reported no frames for {path}")
-        rows.append(
-            {
-                "well_label": row["well_label"],
-                "well_archive_path": str(path),
-                "frame_count": frames,
-                "bytes": path.stat().st_size,
-            }
-        )
+        observed = {
+            "well_label": row["well_label"],
+            "well_archive_path": str(path),
+            "bytes": path.stat().st_size,
+            "validation_mode": mode,
+        }
+        if mode == "full-decode":
+            frames = ffprobe_frame_count(ffprobe, path)
+            if frames <= 0:
+                raise RuntimeError(f"ffprobe reported no decoded frames for {path}")
+            observed.update({"frame_count": frames, "count_basis": "decoded_frames", "sentinel_full_decode": True})
+        else:
+            summary = ffprobe_packet_summary(ffprobe, path)
+            expected_width = int(float(row.get("roi_width") or (float(row["roi_x1"]) - float(row["roi_x0"]))))
+            expected_height = int(float(row.get("roi_height") or (float(row["roi_y1"]) - float(row["roi_y0"]))))
+            if summary["codec_name"] != "av1":
+                raise RuntimeError(f"expected AV1 video in {path}; observed {summary['codec_name']!r}")
+            if (summary["width"], summary["height"]) != (expected_width, expected_height):
+                raise RuntimeError(
+                    f"unexpected geometry for {path}: observed {summary['width']}x{summary['height']}, "
+                    f"expected {expected_width}x{expected_height}"
+                )
+            if summary["packet_count"] <= 0:
+                raise RuntimeError(f"ffprobe reported no video packets for {path}")
+            observed.update(summary)
+            observed.update({"frame_count": summary["packet_count"], "count_basis": "video_packets"})
+            is_sentinel = index in sentinels
+            observed["sentinel_full_decode"] = bool(is_sentinel and decode_sentinels)
+            if is_sentinel and decode_sentinels:
+                decoded_frames = ffprobe_frame_count(ffprobe, path)
+                if decoded_frames != summary["packet_count"]:
+                    raise RuntimeError(
+                        f"decoded frame count differs from packet count for {path}: "
+                        f"{decoded_frames} != {summary['packet_count']}"
+                    )
+                observed["decoded_frame_count"] = decoded_frames
+        rows.append(observed)
+    counts = {row["frame_count"] for row in rows}
+    if len(counts) != 1:
+        raise RuntimeError(f"well output frame/packet counts differ: {sorted(counts)}")
     return rows
 
 
@@ -283,6 +353,8 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "encoder": args.encoder,
         "crf": args.crf,
         "preset": args.preset,
+        "validation_mode": args.validation_mode,
+        "validation_sentinel_count": args.validation_sentinel_count,
         "run_sidecar": args.run_sidecar,
         "started_monotonic": time.monotonic(),
     }
@@ -294,7 +366,12 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
 
     if outputs_complete(manifest_well_rows) and not args.force:
         payload["status"] = "skipped_existing"
-        payload["validation"] = validate_outputs(args.ffprobe, manifest_well_rows)
+        payload["validation"] = validate_outputs(
+            args.ffprobe,
+            manifest_well_rows,
+            mode=args.validation_mode,
+            sentinel_count=args.validation_sentinel_count,
+        )
         write_json(validation_path, payload)
         write_json(log_path, payload)
         return payload
@@ -327,7 +404,12 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         raise SystemExit(completed.returncode)
 
     promote_partials(well_rows)
-    validation_rows = validate_outputs(args.ffprobe, well_rows)
+    validation_rows = validate_outputs(
+        args.ffprobe,
+        well_rows,
+        mode=args.validation_mode,
+        sentinel_count=args.validation_sentinel_count,
+    )
     payload["validation"] = validation_rows
     if args.run_sidecar:
         payload["sidecars"] = run_sidecars(args.sidecar_bin, well_rows, args.force)
@@ -347,7 +429,13 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
             payload["output_rsync_returncode"] = completed.returncode
             write_json(log_path, payload)
             raise SystemExit(completed.returncode)
-        payload["final_validation"] = validate_outputs(args.ffprobe, manifest_well_rows)
+        payload["final_validation"] = validate_outputs(
+            args.ffprobe,
+            manifest_well_rows,
+            mode=args.validation_mode,
+            sentinel_count=args.validation_sentinel_count,
+            decode_sentinels=False,
+        )
         if not args.keep_local_work:
             payload["cleaned_local_work"] = cleanup_local_work(work_root, plate_row["source_video_id"])
         payload["status"] = "validated"
@@ -369,6 +457,13 @@ def main():
     parser.add_argument("--encoder", default="libaom-av1")
     parser.add_argument("--crf", type=int, default=35)
     parser.add_argument("--preset", type=int, default=8)
+    parser.add_argument(
+        "--validation-mode",
+        choices=("full-decode", "packet-count", "packet-count-sentinel"),
+        default="packet-count-sentinel",
+        help="Output validation tier; packet-count-sentinel fully decodes a deterministic subset.",
+    )
+    parser.add_argument("--validation-sentinel-count", type=int, default=5)
     parser.add_argument("--run-sidecar", action="store_true")
     parser.add_argument("--sidecar-bin", default=os.environ.get("MESTIMATE_SIDECAR_BIN", "mestimate-sidecar"))
     parser.add_argument("--force", action="store_true")

@@ -28,6 +28,8 @@ FFPROBE_BIN="${FFPROBE_BIN:-ffprobe}"
 ENCODER="${ENCODER:-libaom-av1}"
 CRF="${CRF:-35}"
 PRESET="${PRESET:-8}"
+VALIDATION_MODE="${VALIDATION_MODE:-packet-count-sentinel}"
+VALIDATION_SENTINEL_COUNT="${VALIDATION_SENTINEL_COUNT:-5}"
 RUN_SIDECAR="${RUN_SIDECAR:-0}"
 FORCE="${FORCE:-0}"
 CHUNK_SIZE="${CHUNK_SIZE:-1}"
@@ -46,6 +48,8 @@ args=(
   --encoder "$ENCODER"
   --crf "$CRF"
   --preset "$PRESET"
+  --validation-mode "$VALIDATION_MODE"
+  --validation-sentinel-count "$VALIDATION_SENTINEL_COUNT"
   --chunk-size "$CHUNK_SIZE"
 )
 

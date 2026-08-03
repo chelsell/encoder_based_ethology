@@ -209,5 +209,11 @@ Then measure:
 - rsync time to shared output;
 - collection time to final storage.
 
+Benchmark validation separately. `full-decode` decodes all 96 outputs twice and
+can materially inflate plate wall time. When source HEVCs have a checksum-verified
+cloud backup, the production default is `packet-count-sentinel`: structural and
+packet-count checks for every well, plus full decode of five deterministic wells
+and rolling full-decode/source-versus-archive sentinel plates.
+
 Those measurements should set the production `scratch`, `max-staged`, and
 `max-concurrent` values.

@@ -120,6 +120,20 @@ The SGE script requests one slot, `mem_free=6G`, `scratch=200G`, and
 `h_rt=24:00:00` by default. Adjust `scripts/archival_plate_array.sge` or submit
 flags if a benchmarked plate requires more local scratch or runtime.
 
+The default output check is `--validation-mode packet-count-sentinel`: every
+well is checked for AV1 codec, expected geometry, positive and mutually
+consistent video-packet counts, and five deterministic wells spanning the plate
+are fully decoded. Local validated outputs are checked again after rsync, without
+repeating the sentinel decodes. Use `--validation-mode full-decode` for the older
+conservative behavior that fully decodes all 96 wells at both stages. The lighter
+default is appropriate only when the source HEVC has an independently verified,
+recoverable backup; record that backup identity and checksum before reclaiming
+the primary source copy.
+
+Run full-decode and source-versus-AV1 checks on a rolling sentinel subset of
+plates even when routine jobs use the lighter tier. The validation mode and
+sentinel count are recorded in each plate task manifest.
+
 Set `--run-sidecar` only when you want post-archive AV1-domain sidecar summaries
 from the well videos. Source-domain MV extraction from cropped streams is not
 implemented in this worker.

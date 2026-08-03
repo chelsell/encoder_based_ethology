@@ -107,6 +107,8 @@ def test_qsub_command_sets_sge_environment():
         encoder="libaom-av1",
         crf=35,
         preset=8,
+        validation_mode="packet-count-sentinel",
+        validation_sentinel_count=5,
         sge_script="scripts/archival_plate_array.sge",
         chunk_size=5,
         max_concurrent=3,
@@ -121,6 +123,8 @@ def test_qsub_command_sets_sge_environment():
     assert "APPTAINER_EXTRA_BIND=/scratch" in cmd[6]
     assert "RUN_SIDECAR=1" in cmd[6]
     assert "CHUNK_SIZE=5" in cmd[6]
+    assert "VALIDATION_MODE=packet-count-sentinel" in cmd[6]
+    assert "VALIDATION_SENTINEL_COUNT=5" in cmd[6]
     assert cmd[-1] == "scripts/archival_plate_array.sge"
 
 
@@ -136,6 +140,8 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
         encoder="libaom-av1",
         crf=35,
         preset=8,
+        validation_mode="packet-count-sentinel",
+        validation_sentinel_count=5,
         sge_script="scripts/archival_plate_array.sge",
         chunk_size=5,
         max_concurrent=3,

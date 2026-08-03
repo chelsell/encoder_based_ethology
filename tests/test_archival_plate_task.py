@@ -1,17 +1,22 @@
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 from run_archival_plate_task import (  # noqa: E402
     build_crop_filter,
     build_ffmpeg_command,
     cleanup_local_work,
+    ffprobe_packet_summary,
     map_well_rows_to_output_dir,
     resolve_source_path,
     rsync_copy_command,
     rsync_tree_command,
     select_plate_rows_for_chunk,
+    sentinel_indices,
+    validate_outputs,
 )
 
 
@@ -156,3 +161,73 @@ def test_cleanup_local_work_removes_only_source_specific_tmp_dirs(tmp_path):
     assert not (work_root / "input" / "runA").exists()
     assert not (work_root / "output" / "runA").exists()
     assert keep.exists()
+
+
+def test_sentinel_indices_are_deterministic_and_span_wells():
+    assert sentinel_indices(96, 5) == {0, 24, 48, 71, 95}
+    assert sentinel_indices(2, 5) == {0, 1}
+    assert sentinel_indices(96, 0) == set()
+
+
+def test_ffprobe_packet_summary_parses_av1_stream(monkeypatch):
+    monkeypatch.setattr(
+        "run_archival_plate_task.subprocess.check_output",
+        lambda *args, **kwargs: '{"streams":[{"codec_name":"av1","width":20,"height":20,"duration":"10.5","nb_read_packets":"100"}]}',
+    )
+
+    observed = ffprobe_packet_summary("ffprobe", "/tmp/well.mkv")
+
+    assert observed == {
+        "codec_name": "av1",
+        "width": 20,
+        "height": 20,
+        "duration_s": 10.5,
+        "packet_count": 100,
+    }
+
+
+def test_packet_count_validation_checks_all_outputs_and_decodes_sentinels(tmp_path, monkeypatch):
+    rows = well_rows(tmp_path)
+    for row in rows:
+        path = pathlib.Path(row["well_archive_path"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"av1")
+    monkeypatch.setattr(
+        "run_archival_plate_task.ffprobe_packet_summary",
+        lambda _ffprobe, _path: {
+            "codec_name": "av1",
+            "width": 20,
+            "height": 20,
+            "duration_s": 10.0,
+            "packet_count": 100,
+        },
+    )
+    monkeypatch.setattr("run_archival_plate_task.ffprobe_frame_count", lambda _ffprobe, _path: 100)
+
+    observed = validate_outputs("ffprobe", rows, mode="packet-count-sentinel", sentinel_count=1)
+
+    assert [row["frame_count"] for row in observed] == [100, 100]
+    assert [row["count_basis"] for row in observed] == ["video_packets", "video_packets"]
+    assert [row["sentinel_full_decode"] for row in observed] == [False, True]
+
+
+def test_packet_count_validation_rejects_inconsistent_well_counts(tmp_path, monkeypatch):
+    rows = well_rows(tmp_path)
+    for row in rows:
+        path = pathlib.Path(row["well_archive_path"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"av1")
+    counts = iter((100, 99))
+    monkeypatch.setattr(
+        "run_archival_plate_task.ffprobe_packet_summary",
+        lambda _ffprobe, _path: {
+            "codec_name": "av1",
+            "width": 20,
+            "height": 20,
+            "duration_s": 10.0,
+            "packet_count": next(counts),
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="counts differ"):
+        validate_outputs("ffprobe", rows, mode="packet-count", sentinel_count=0)

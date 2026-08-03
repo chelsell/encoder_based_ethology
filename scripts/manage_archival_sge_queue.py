@@ -105,6 +105,8 @@ def qsub_command(args, plate_count):
         "ENCODER": args.encoder,
         "CRF": str(args.crf),
         "PRESET": str(args.preset),
+        "VALIDATION_MODE": args.validation_mode,
+        "VALIDATION_SENTINEL_COUNT": str(args.validation_sentinel_count),
     }
     env_arg = ",".join(f"{k}={v}" for k, v in env.items())
     cmd = ["qsub", "-t", f"1-{task_count}"]
@@ -243,6 +245,12 @@ def main():
     submit.add_argument("--encoder", default="libaom-av1")
     submit.add_argument("--crf", type=int, default=35)
     submit.add_argument("--preset", type=int, default=8)
+    submit.add_argument(
+        "--validation-mode",
+        choices=("full-decode", "packet-count", "packet-count-sentinel"),
+        default="packet-count-sentinel",
+    )
+    submit.add_argument("--validation-sentinel-count", type=int, default=5)
     submit.add_argument("--run-sidecar", action="store_true")
     submit.add_argument("--chunk-size", type=int, default=1, help="Plate videos processed serially by each SGE task.")
     submit.add_argument("--max-concurrent", type=int, default=0, help="SGE -tc concurrency cap for array tasks; 0 omits -tc.")
