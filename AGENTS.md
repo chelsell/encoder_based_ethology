@@ -13,9 +13,13 @@ to inspect, not automatically as failure.
 
 ## Current architecture
 
-- The historical candidate is one canonical source decode producing 96
-  independent well AV1 files, per-well source-domain `mestimate` sidecars, and
-  separate plate/reference-region QC. Whole-plate AV1 remains a comparison arm.
+- The implemented plate worker produces 96 independent well AV1 files through
+  one FFmpeg filter graph by default. With multiple encoder processes, the
+  source is decoded once per process group.
+- Its optional post-encode `mestimate` step reads the completed well AV1 files.
+  This is archive-domain compatibility/debug output, not source-domain QC.
+- One canonical source decode feeding per-well source-domain multi-lag features
+  plus plate/reference-region QC is the target contract, not current behavior.
 - Keep source HEVC recoverable from a checksum-verified backup while the archive
   and source-domain QC path are under validation. Nothing here authorizes source
   deletion.
@@ -30,8 +34,9 @@ to inspect, not automatically as failure.
 - Start with `README.md` for supported commands. For production cluster work,
   also read `docs/sge_archival_orchestration.md`,
   `docs/cluster_reproducibility.md`, and the latest dated Wynton status note.
-- Treat `docs/sidecar_schema.md`, `docs/mv_features_v1_schema.md`, and
-  `docs/transcode_qc_feature_contract.md` as the schema/contract authorities.
+- Treat `docs/sidecar_schema.md` and `docs/mv_features_v1_schema.md` as current
+  schemas. `docs/transcode_qc_feature_contract.md` is an unimplemented target
+  contract; do not report it as an emitted product.
 - Preserve raw/source-derived measurements separately from derived feature
   sets. Version derived features instead of changing earlier meanings in place.
 - Every output must identify the input hash, ROI/geometry, source frame/timebase,
@@ -53,10 +58,14 @@ to inspect, not automatically as failure.
 ```bash
 ./scripts/build.sh
 tests/test_synthetic_translation.sh
-python -m pytest -q
+python -m pytest -q tests
 ```
 
-Use the repository Apptainer definition for production compatibility. Dry-run a
+Scope pytest to `tests/`: a local `mestimate_sidecar.sandbox/` contains a full
+container filesystem that pytest would otherwise try to collect recursively.
+
+Use the repository Apptainer definition for production compatibility when an
+image is configured; some wrappers otherwise use host tools. Dry-run a
 single manifest task and complete a bounded pilot before submitting an archival
 array. Software tests validate plumbing; biological claims still require matched
 source/AV1 comparisons and visual audit.

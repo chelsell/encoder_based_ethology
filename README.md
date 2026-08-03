@@ -1,11 +1,34 @@
 # Encoder-Based Motion Sidecars
 
-This repository contains a minimal prototype extractor for FFmpeg `mestimate`
-motion-vector side data.
+This repository contains a C17 extractor for FFmpeg `mestimate` motion-vector
+side data plus Python utilities for sidecar inspection, feature experiments,
+annotation import, and 96-well AV1 archival jobs.
 
 The extractor is a standalone C17 command-line tool. It links against installed
 FFmpeg development libraries and writes inspectable sidecars; it does not patch
 FFmpeg, re-encode the source video, or parse diagnostic overlays.
+
+## Implemented status
+
+- `mestimate-sidecar` extracts frame summaries and optional vector rows from one
+  input video. It includes lag-1 grayscale image change and basic MV magnitude,
+  resultant, and coherence summaries.
+- `scripts/run_archival_plate_task.py` creates 96 cropped AV1 files through one
+  FFmpeg filter graph by default. Increasing `--encoder-processes` partitions
+  wells across processes and decodes the source once per process, not once for
+  the whole plate.
+- The plate worker validates encoded outputs and can run `mestimate-sidecar`
+  afterward on the materialized AV1 wells. That optional sidecar is
+  archive-domain, not a source-domain branch from the source decode.
+- The source-domain multi-lag image dynamics, static-reference channel, and
+  plate common-mode companion specified in
+  `docs/transcode_qc_feature_contract.md` are not implemented.
+- Cluster wrappers use an Apptainer image when configured; otherwise they can
+  invoke host tools. Source deletion is never part of the repository workflow.
+
+The README below documents several independent utilities, not one end-to-end
+command. Dated benchmark/status notes are snapshots and may describe runs that
+do not exist on the current host.
 
 ## System build dependencies
 
@@ -199,7 +222,8 @@ The cluster does not need the full local working tree; use
 source bundle.
 
 The current archival candidate intentionally writes 96 independent well AV1
-videos from one source decode. A controlled 10-second comparison measured the
+videos through one FFmpeg graph in its default one-process mode. Multiple
+encoder processes repeat the source decode per group. A controlled 10-second comparison measured the
 combined well outputs at 1.74 times the bytes of a whole-plate AV1, despite the
 crops covering 71.7% of the source pixels. That storage premium is currently
 accepted for further testing because independent well videos simplify the
@@ -347,7 +371,12 @@ small fixture video. Set `FFMPEG_BIN=/path/to/ffmpeg` to pin a specific binary.
 
 ```bash
 tests/test_synthetic_translation.sh
+python -m pytest -q tests
 ```
+
+Scope pytest to `tests/`. A locally built `mestimate_sidecar.sandbox/` is a full
+container filesystem, and a bare recursive pytest invocation can collect
+incompatible system-Python files from it.
 
 The synthetic test creates a small 83x83 video with known static, horizontal,
 and vertical movement episodes, then checks schemas, row-count consistency, and
@@ -596,12 +625,19 @@ This writes `filter_scan.tsv`, a heatmap, and a vector table augmented with
 local block frame-difference features. Treat these as threshold exploration
 artifacts, not validated behavioral labels.
 
+## Local data directories
+
+If needed, create the ignored working directories with:
+
+```bash
 mkdir -p data/{catalog,manifests,rendered_clips,annotations,reports,metrics,cache,interim}
+```
 
 This repository does not track raw video, rendered clips, local annotation databases,
 derived metric tables, or large generated outputs.
 
 Tracked inputs should generally be limited to:
+
 - source code
 - tests and small synthetic fixtures
 - configuration files

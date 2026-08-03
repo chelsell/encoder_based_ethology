@@ -1,4 +1,9 @@
-Recommended Bundle
+# Cliptriage annotation import bundle
+
+Status: this is the external bundle layout accepted by the repository's
+Cliptriage import utility. This repository does not build or serve the bundle.
+
+## Recommended bundle
 
   cliptriage_export_<dataset>_<date>/
   ├── README.md
@@ -21,7 +26,7 @@ Recommended Bundle
       ├── render_results.csv
       └── export_metadata.json
 
-  Naming Scheme
+## Naming scheme
   Keep clip_id as the stable identity. Current archival layout is good:
 
   clips/<first_two_chars_of_clip_id>/<clip_id>/preview.mp4
@@ -33,7 +38,7 @@ Recommended Bundle
 
   That avoids giant flat directories and keeps URLs/object-storage keys stable.
 
-  Core Tables
+## Core tables
   manifest.parquet: one row per stable source clip. Must include source provenance, frame bounds, ROI, sampling stratum, Valar ids, config hash, random seed.
 
   presentations.parquet: one row per task occurrence of a clip. This is where repeats/blinding/task order live.
@@ -42,11 +47,11 @@ Recommended Bundle
 
   latest_annotations.parquet: convenience table with the latest annotation per presentation_id, annotator_id, and task_id.
 
-  Important Rule
+## Important rule
   Copy only clips referenced by the exported manifest. The render directory currently contains stale smoke clips from earlier runs, so directory-copy export would include unrelated
   assets.
 
-  Another Project Summary
+## Source-project summary
   This dataset contains short browser-playable well-crop clips from SauronX recordings. Each clip has stable source-frame provenance back to /shire/store, Valar run/well metadata, ROI
   coordinates, deterministic clip_id, sampling stratum, rendered H.264 preview, and append-only human annotation events. Labels are observational, taxonomy-versioned, and separated
   from clip identity through presentation records so repeated/blinded review and multiple annotators remain possible.

@@ -1,9 +1,11 @@
 # SGE archival orchestration
 
 This workflow is for a CPU SGE cluster with limited scratch space. The scheduler
-unit is one source plate HEVC video. Each task decodes that source once, crops
-all wells from a versioned ROI table, writes per-well AV1 outputs, validates the
-outputs, and optionally runs per-well sidecar summaries.
+unit is one source plate HEVC video. With the default one encoder process, each
+task decodes that source once, crops all wells from a versioned ROI table,
+writes per-well AV1 outputs, validates the outputs, and optionally runs per-well
+sidecar summaries. Configuring multiple encoder processes repeats the source
+decode once per process group, as described below.
 
 The current working architecture retains the 96 independent well videos as the
 candidate durable video representation. Whole-plate AV1 remains a comparison

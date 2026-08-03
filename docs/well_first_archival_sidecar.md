@@ -1,5 +1,10 @@
 # Well-first archival sidecars
 
+Status: this document combines the implemented AV1 plate worker with a target
+source-domain QC architecture. The current worker implements well AV1 creation
+and optional post-encode archive-domain sidecars. It does not yet branch the
+multi-lag well features or plate/reference companion from the source decode.
+
 The preferred archival order is:
 
 ```text

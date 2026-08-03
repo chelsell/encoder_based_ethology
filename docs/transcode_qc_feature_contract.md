@@ -1,6 +1,10 @@
-# Transcode QC feature contract
+# Target transcode QC feature contract (not yet implemented)
 
-The historical transcode QC product is a two-axis, source-domain representation:
+Status: this document specifies the intended source-domain archival QC product.
+The current worker does not emit it. The implemented subset and missing fields
+are summarized under “Promotion gate” below.
+
+The proposed historical transcode QC product is a two-axis, source-domain representation:
 
 1. visible event activity in each well;
 2. technical/common-mode evidence from the well and the full plate.
