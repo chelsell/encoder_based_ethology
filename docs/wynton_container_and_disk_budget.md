@@ -36,6 +36,11 @@ APPTAINER_CACHE_ROOT=/wynton/scratch/$USER/encoder_based_ethology/apptainer-cach
 scripts/build_wynton_container.sh
 ```
 
+The helper sets container compilation concurrency from SGE `$NSLOTS`, defaulting
+to one outside a parallel job, and records `build_jobs` in the build manifest.
+Request matching scheduler slots rather than allowing CMake to use an entire
+node implicitly.
+
 The helper writes:
 
 ```text

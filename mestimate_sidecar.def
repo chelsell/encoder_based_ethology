@@ -18,6 +18,7 @@ From: ubuntu:24.04
 %post
     set -eux
     export DEBIAN_FRONTEND=noninteractive
+    BUILD_JOBS="${BUILD_JOBS:-1}"
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -52,7 +53,7 @@ From: ubuntu:24.04
         -DENABLE_EXAMPLES=OFF \
         -DENABLE_TESTS=OFF \
         -DENABLE_TOOLS=OFF
-    cmake --build /opt/libaom-v3.13.2/build --parallel
+    cmake --build /opt/libaom-v3.13.2/build --parallel "$BUILD_JOBS"
     cmake --install /opt/libaom-v3.13.2/build
     ldconfig
     test "$(pkg-config --modversion aom)" = "3.13.2"
@@ -61,7 +62,7 @@ From: ubuntu:24.04
 
     cmake -S /opt/mestimate-sidecar/source -B /opt/mestimate-sidecar/build \
         -DCMAKE_BUILD_TYPE=Release
-    cmake --build /opt/mestimate-sidecar/build --parallel
+    cmake --build /opt/mestimate-sidecar/build --parallel "$BUILD_JOBS"
     install -Dm755 \
         /opt/mestimate-sidecar/build/mestimate-sidecar \
         /opt/mestimate-sidecar/bin/mestimate-sidecar
