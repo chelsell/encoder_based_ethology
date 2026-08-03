@@ -68,6 +68,20 @@ one thread for a one-slot SGE task, publishes an `encoding` manifest before
 FFmpeg starts, and writes a 30-second shared progress heartbeat. The two failed
 sources are mandatory EOF regression cases before another benchmark wave.
 
+The replacement SIF was built successfully from repository commit `f082b12` on
+Wynton `dev2`, following Wynton's requirement to build custom containers on a
+development node with outbound access. Its SHA-256 is
+`745f59e52a502e850578ed919376113d53505c4081589b6c3e76543d1c2e6b56`,
+and its build manifest records FFmpeg 6.1.1, libaom 3.13.2, and a clean source
+checkout.
+
+Full-length EOF regressions for the two failed sources are running as array
+`4362860`. They write to the isolated prefix
+`regressions/libaom3132_f082b12/runs`, use full-decode validation, and do not run
+the sidecar. Both tasks published `status: encoding` manifests and advancing
+heartbeats. This confirms liveness observability, not yet a successful EOF
+result.
+
 Lightweight control operations use `log2.wynton.ucsf.edu`; bulk data does not
 pass through the login node. No SSH tunnel is required for job execution or
 transfer. A persistent SSH ControlMaster is only a monitoring convenience.

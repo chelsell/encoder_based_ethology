@@ -146,7 +146,11 @@ Before FFmpeg starts, the worker publishes
 `manifest/archival_plate_task.json` with `status: encoding`. FFmpeg writes a
 shared heartbeat to `logs/ffmpeg_progress.log` at the configured interval. This
 small control-plane write is intentionally on shared scratch so progress remains
-visible while large partial videos stay in job-local `$TMPDIR`.
+visible while large partial videos stay in job-local `$TMPDIR`. For the current
+96-output graph, the heartbeat reliably exposes modification time, file growth,
+and aggregate FPS, but may be dominated by per-stream quantizer fields before a
+useful aggregate `out_time` appears. Treat it as a liveness signal unless the
+specific progress keys needed for an ETA are present.
 
 The default output check is `--validation-mode packet-count-sentinel`: every
 well is checked for AV1 codec, expected geometry, positive and mutually
