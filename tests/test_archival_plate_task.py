@@ -194,6 +194,7 @@ def test_run_one_plate_publishes_encoding_manifest_before_ffmpeg(tmp_path, monke
 
     assert observed["status_during_ffmpeg"] == "encoding"
     assert observed["progress_path"] == str(output_dir / "logs" / "ffmpeg_progress.log")
+    assert result["sge_nslots"] == 1
     assert result["status"] == "validated"
 
 

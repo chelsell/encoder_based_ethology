@@ -112,15 +112,28 @@ def qsub_command(args, plate_count):
         "MAX_SOURCE_DURATION_SECONDS": str(args.max_source_duration_seconds),
     }
     env_arg = ",".join(f"{k}={v}" for k, v in env.items())
-    cmd = ["qsub", "-t", f"1-{task_count}"]
+    if args.encoder_threads > args.sge_slots:
+        raise ValueError(
+            f"encoder threads ({args.encoder_threads}) exceed requested SGE slots ({args.sge_slots})"
+        )
+    cmd = [
+        "qsub",
+        "-t",
+        f"1-{task_count}",
+        "-pe",
+        "smp",
+        str(args.sge_slots),
+        "-o",
+        str(pathlib.Path(args.sge_log_dir).resolve()),
+    ]
     if args.max_concurrent:
         cmd.extend(["-tc", str(args.max_concurrent)])
     cmd.extend(["-v", env_arg, args.sge_script])
     return cmd
 
 
-def prepare_sge_log_dir(repo_dir):
-    path = pathlib.Path(repo_dir).resolve() / "sge_logs"
+def prepare_sge_log_dir(sge_log_dir):
+    path = pathlib.Path(sge_log_dir).resolve()
     if path.exists() and not path.is_dir():
         raise RuntimeError(f"SGE log path exists but is not a directory: {path}")
     path.mkdir(parents=True, exist_ok=True)
@@ -175,7 +188,7 @@ def cmd_submit(args):
         rows = read_csv(args.plate_manifest)
         plate_count = len(rows)
     if not args.dry_run:
-        prepare_sge_log_dir(args.repo_dir)
+        prepare_sge_log_dir(args.sge_log_dir)
     cmd = qsub_command(args, plate_count)
     run_or_print(cmd, args.dry_run)
 
@@ -255,6 +268,12 @@ def main():
     submit.add_argument("--image", default="")
     submit.add_argument("--apptainer-extra-bind", default="", help="Additional same-path bind, e.g. /scratch or /cluster.")
     submit.add_argument("--sge-script", default="scripts/archival_plate_array.sge")
+    submit.add_argument(
+        "--sge-log-dir",
+        required=True,
+        help="Scheduler output directory outside the immutable source checkout.",
+    )
+    submit.add_argument("--sge-slots", type=int, default=1, help="SGE smp slots requested per array task.")
     submit.add_argument("--encoder", default="libaom-av1")
     submit.add_argument("--crf", type=int, default=35)
     submit.add_argument("--preset", type=int, default=8)

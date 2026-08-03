@@ -378,6 +378,7 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
     validation_path = output_dir / "manifest" / "archival_validation.json"
     progress_path = output_dir / "logs" / "ffmpeg_progress.log"
 
+    sge_nslots = int(os.environ.get("NSLOTS", "1"))
     payload = {
         "plate_manifest": str(pathlib.Path(args.plate_manifest).resolve()),
         "well_manifest": str(pathlib.Path(args.well_manifest).resolve()),
@@ -395,6 +396,7 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "crf": args.crf,
         "preset": args.preset,
         "encoder_threads": args.encoder_threads,
+        "sge_nslots": sge_nslots,
         "progress_interval_seconds": args.progress_interval_seconds,
         "ffmpeg_progress_path": str(progress_path),
         "validation_mode": args.validation_mode,
@@ -403,6 +405,13 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "run_sidecar": args.run_sidecar,
         "started_monotonic": time.monotonic(),
     }
+
+    if args.encoder_threads > sge_nslots:
+        payload["status"] = "encoder_threads_exceed_sge_slots"
+        write_json(log_path, payload)
+        raise SystemExit(
+            f"encoder threads ({args.encoder_threads}) exceed allocated SGE slots ({sge_nslots})"
+        )
 
     if not source_path.exists():
         payload["status"] = "missing_source"

@@ -101,6 +101,8 @@ python scripts/manage_archival_sge_queue.py submit \
   --well-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/well_archival_outputs.csv \
   --staged-input-root /wynton/scratch/$USER/encoder_based_ethology/staged_hevc \
   --repo-dir /wynton/scratch/$USER/encoder_based_ethology/source/encoder_based_ethology_<commit> \
+  --sge-log-dir /wynton/scratch/$USER/encoder_based_ethology/sge_logs/<test-wave> \
+  --sge-slots 1 \
   --image /path/to/archival_pipeline.sif \
   --apptainer-extra-bind /wynton/scratch \
   --chunk-size 1 \
@@ -121,10 +123,11 @@ plate. `--max-concurrent` emits SGE `-tc` to cap simultaneously running tasks.
 Larger serial chunks remain supported, but should not be used until per-plate
 runtime and failure recovery are well characterized.
 
-For a real submission, the queue manager creates `<repo-dir>/sge_logs` before
-calling `qsub` and rejects a non-directory at that path. SGE resolves its output
-target before the job wrapper runs, so the directory cannot be created reliably
-from inside the job itself.
+For a real submission, the queue manager creates `--sge-log-dir` before calling
+`qsub` and rejects a non-directory at that path. Keep scheduler output outside
+the immutable commit checkout. SGE resolves its output target before the job
+wrapper runs, so the directory cannot be created reliably from inside the job
+itself.
 
 `--plate-count` is only needed when printing a dry-run command from a machine
 that cannot read the Wynton manifest path. When running the submit command on
@@ -138,9 +141,12 @@ ordinary sources; the p90/p99 compressed-size stress tests request 50G scratch.
 Observed maximum virtual memory is about 2.3G. No production scratch default has
 been frozen because no full-length task had completed at the benchmark snapshot.
 
-Each AV1 output is explicitly limited to `--encoder-threads` threads. Keep this
-at one when requesting one SGE slot. Increasing it requires a matching parallel
-environment slot request and a new throughput benchmark.
+Each AV1 output is explicitly limited to `--encoder-threads` threads. The
+submission helper emits `qsub -pe smp <n>` from `--sge-slots` and rejects
+`--encoder-threads` values larger than that allocation. The worker records
+`$NSLOTS` and independently rejects an over-threaded launch. Increasing either
+value requires a matched throughput benchmark; one-thread/one-slot operation is
+a diagnostic baseline, not a production throughput default.
 
 Before FFmpeg starts, the worker publishes
 `manifest/archival_plate_task.json` with `status: encoding`. FFmpeg writes a

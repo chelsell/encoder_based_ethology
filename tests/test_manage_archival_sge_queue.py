@@ -114,38 +114,76 @@ def test_qsub_command_sets_sge_environment():
         validation_sentinel_count=5,
         max_source_duration_seconds=3600.0,
         sge_script="scripts/archival_plate_array.sge",
+        sge_log_dir="/scratch/logs/test-wave",
+        sge_slots=1,
         chunk_size=5,
         max_concurrent=3,
     )
 
     cmd = qsub_command(args, 12)
 
-    assert cmd[:6] == ["qsub", "-t", "1-3", "-tc", "3", "-v"]
-    assert "PLATE_MANIFEST=/repo/manifests/plates.csv" in cmd[6]
-    assert "WELL_MANIFEST=/repo/manifests/wells.csv" in cmd[6]
-    assert "STAGED_INPUT_ROOT=/scratch/stage" in cmd[6]
-    assert "APPTAINER_EXTRA_BIND=/scratch" in cmd[6]
-    assert "RUN_SIDECAR=1" in cmd[6]
-    assert "CHUNK_SIZE=5" in cmd[6]
-    assert "VALIDATION_MODE=packet-count-sentinel" in cmd[6]
-    assert "VALIDATION_SENTINEL_COUNT=5" in cmd[6]
-    assert "MAX_SOURCE_DURATION_SECONDS=3600.0" in cmd[6]
-    assert "ENCODER_THREADS=1" in cmd[6]
-    assert "PROGRESS_INTERVAL_SECONDS=30.0" in cmd[6]
+    assert cmd[:10] == [
+        "qsub", "-t", "1-3", "-pe", "smp", "1", "-o", "/scratch/logs/test-wave", "-tc", "3"
+    ]
+    env_arg = cmd[11]
+    assert "PLATE_MANIFEST=/repo/manifests/plates.csv" in env_arg
+    assert "WELL_MANIFEST=/repo/manifests/wells.csv" in env_arg
+    assert "STAGED_INPUT_ROOT=/scratch/stage" in env_arg
+    assert "APPTAINER_EXTRA_BIND=/scratch" in env_arg
+    assert "RUN_SIDECAR=1" in env_arg
+    assert "CHUNK_SIZE=5" in env_arg
+    assert "VALIDATION_MODE=packet-count-sentinel" in env_arg
+    assert "VALIDATION_SENTINEL_COUNT=5" in env_arg
+    assert "MAX_SOURCE_DURATION_SECONDS=3600.0" in env_arg
+    assert "ENCODER_THREADS=1" in env_arg
+    assert "PROGRESS_INTERVAL_SECONDS=30.0" in env_arg
     assert cmd[-1] == "scripts/archival_plate_array.sge"
 
 
-def test_prepare_sge_log_dir_precedes_qsub_and_rejects_file(tmp_path):
-    observed = prepare_sge_log_dir(tmp_path)
+def test_qsub_command_rejects_more_encoder_threads_than_sge_slots():
+    args = SimpleNamespace(
+        repo_dir="/repo",
+        plate_manifest="/repo/manifests/plates.csv",
+        well_manifest="/repo/manifests/wells.csv",
+        staged_input_root="/scratch/stage",
+        image="/images/pipeline.sif",
+        apptainer_extra_bind="/scratch",
+        run_sidecar=False,
+        encoder="libaom-av1",
+        crf=35,
+        preset=8,
+        encoder_threads=8,
+        progress_interval_seconds=30.0,
+        validation_mode="full-decode",
+        validation_sentinel_count=5,
+        max_source_duration_seconds=3600.0,
+        sge_script="scripts/archival_plate_array.sge",
+        sge_log_dir="/scratch/logs/test-wave",
+        sge_slots=4,
+        chunk_size=1,
+        max_concurrent=1,
+    )
 
-    assert observed == tmp_path / "sge_logs"
+    try:
+        qsub_command(args, 2)
+    except ValueError as error:
+        assert "exceed requested SGE slots" in str(error)
+    else:
+        raise AssertionError("expected an encoder/SGE resource mismatch to be rejected")
+
+
+def test_prepare_sge_log_dir_precedes_qsub_and_rejects_file(tmp_path):
+    log_dir = tmp_path / "outside" / "sge_logs"
+    observed = prepare_sge_log_dir(log_dir)
+
+    assert observed == log_dir
     assert observed.is_dir()
 
-    other_repo = tmp_path / "other"
-    other_repo.mkdir()
-    (other_repo / "sge_logs").write_text("scheduler output", encoding="utf-8")
+    bad_path = tmp_path / "other" / "sge_logs"
+    bad_path.parent.mkdir()
+    bad_path.write_text("scheduler output", encoding="utf-8")
     try:
-        prepare_sge_log_dir(other_repo)
+        prepare_sge_log_dir(bad_path)
     except RuntimeError as error:
         assert "not a directory" in str(error)
     else:
@@ -170,6 +208,8 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
         validation_sentinel_count=5,
         max_source_duration_seconds=3600.0,
         sge_script="scripts/archival_plate_array.sge",
+        sge_log_dir="/wynton/scratch/me/logs/test-wave",
+        sge_slots=1,
         chunk_size=5,
         max_concurrent=3,
         plate_count=12,
@@ -179,5 +219,5 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
     cmd_submit(args)
 
     out = capsys.readouterr().out
-    assert "qsub -t 1-3 -tc 3" in out
+    assert "qsub -t 1-3 -pe smp 1 -o /wynton/scratch/me/logs/test-wave -tc 3" in out
     assert "PLATE_MANIFEST=/wynton/scratch/me/manifests/plates.csv" in out
