@@ -194,6 +194,24 @@ def ffprobe_frame_count(ffprobe, path):
     return int(out) if out and out != "N/A" else 0
 
 
+def ffprobe_duration_seconds(ffprobe, path):
+    cmd = [
+        ffprobe,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nokey=1:noprint_wrappers=1",
+        str(path),
+    ]
+    out = subprocess.check_output(cmd, text=True).strip()
+    duration = float(out) if out and out != "N/A" else 0.0
+    if duration <= 0.0:
+        raise RuntimeError(f"ffprobe reported no positive duration for {path}")
+    return duration
+
+
 def ffprobe_packet_summary(ffprobe, path):
     cmd = [
         ffprobe,
@@ -355,6 +373,7 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "preset": args.preset,
         "validation_mode": args.validation_mode,
         "validation_sentinel_count": args.validation_sentinel_count,
+        "max_source_duration_seconds": args.max_source_duration_seconds,
         "run_sidecar": args.run_sidecar,
         "started_monotonic": time.monotonic(),
     }
@@ -363,6 +382,16 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         payload["status"] = "missing_source"
         write_json(log_path, payload)
         raise SystemExit(f"source video does not exist: {source_path}")
+
+    source_duration_seconds = ffprobe_duration_seconds(args.ffprobe, source_path)
+    payload["source_duration_seconds"] = source_duration_seconds
+    if args.max_source_duration_seconds > 0 and source_duration_seconds > args.max_source_duration_seconds:
+        payload["status"] = "source_duration_exceeds_limit"
+        write_json(log_path, payload)
+        raise SystemExit(
+            f"source duration {source_duration_seconds:.3f}s exceeds "
+            f"limit {args.max_source_duration_seconds:.3f}s"
+        )
 
     if outputs_complete(manifest_well_rows) and not args.force:
         payload["status"] = "skipped_existing"
@@ -464,6 +493,12 @@ def main():
         help="Output validation tier; packet-count-sentinel fully decodes a deterministic subset.",
     )
     parser.add_argument("--validation-sentinel-count", type=int, default=5)
+    parser.add_argument(
+        "--max-source-duration-seconds",
+        type=float,
+        default=3600.0,
+        help="Reject longer sources before copying/encoding; set 0 to disable.",
+    )
     parser.add_argument("--run-sidecar", action="store_true")
     parser.add_argument("--sidecar-bin", default=os.environ.get("MESTIMATE_SIDECAR_BIN", "mestimate-sidecar"))
     parser.add_argument("--force", action="store_true")

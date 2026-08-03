@@ -107,6 +107,7 @@ def qsub_command(args, plate_count):
         "PRESET": str(args.preset),
         "VALIDATION_MODE": args.validation_mode,
         "VALIDATION_SENTINEL_COUNT": str(args.validation_sentinel_count),
+        "MAX_SOURCE_DURATION_SECONDS": str(args.max_source_duration_seconds),
     }
     env_arg = ",".join(f"{k}={v}" for k, v in env.items())
     cmd = ["qsub", "-t", f"1-{task_count}"]
@@ -251,6 +252,12 @@ def main():
         default="packet-count-sentinel",
     )
     submit.add_argument("--validation-sentinel-count", type=int, default=5)
+    submit.add_argument(
+        "--max-source-duration-seconds",
+        type=float,
+        default=3600.0,
+        help="Reject longer sources before encoding; set 0 to disable.",
+    )
     submit.add_argument("--run-sidecar", action="store_true")
     submit.add_argument("--chunk-size", type=int, default=1, help="Plate videos processed serially by each SGE task.")
     submit.add_argument("--max-concurrent", type=int, default=0, help="SGE -tc concurrency cap for array tasks; 0 omits -tc.")

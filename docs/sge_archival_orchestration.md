@@ -134,6 +134,12 @@ Run full-decode and source-versus-AV1 checks on a rolling sentinel subset of
 plates even when routine jobs use the lighter tier. The validation mode and
 sentinel count are recorded in each plate task manifest.
 
+Test waves default to `--max-source-duration-seconds 3600`. The worker probes
+duration before copying a staged source into node-local scratch and records the
+observed duration and configured limit. Set the limit to `0` only when longer
+sources have been deliberately included in a separately budgeted production
+wave.
+
 Set `--run-sidecar` only when you want post-archive AV1-domain sidecar summaries
 from the well videos. Source-domain MV extraction from cropped streams is not
 implemented in this worker.

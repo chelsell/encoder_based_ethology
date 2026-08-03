@@ -9,6 +9,7 @@ from run_archival_plate_task import (  # noqa: E402
     build_crop_filter,
     build_ffmpeg_command,
     cleanup_local_work,
+    ffprobe_duration_seconds,
     ffprobe_packet_summary,
     map_well_rows_to_output_dir,
     resolve_source_path,
@@ -184,6 +185,15 @@ def test_ffprobe_packet_summary_parses_av1_stream(monkeypatch):
         "duration_s": 10.5,
         "packet_count": 100,
     }
+
+
+def test_ffprobe_duration_seconds_requires_positive_duration(monkeypatch):
+    monkeypatch.setattr("run_archival_plate_task.subprocess.check_output", lambda *args, **kwargs: "3599.5\n")
+    assert ffprobe_duration_seconds("ffprobe", "/tmp/source.mkv") == 3599.5
+
+    monkeypatch.setattr("run_archival_plate_task.subprocess.check_output", lambda *args, **kwargs: "N/A\n")
+    with pytest.raises(RuntimeError, match="no positive duration"):
+        ffprobe_duration_seconds("ffprobe", "/tmp/source.mkv")
 
 
 def test_packet_count_validation_checks_all_outputs_and_decodes_sentinels(tmp_path, monkeypatch):
