@@ -23,6 +23,14 @@ def test_sge_wrapper_passes_array_task_index_into_clean_container():
     assert '--task-index "${SGE_TASK_ID:?SGE_TASK_ID is required for the archival array}"' in text
 
 
+def test_archival_container_installs_rsync_for_local_scratch_copies():
+    definition = pathlib.Path(__file__).resolve().parents[1] / "mestimate_sidecar.def"
+
+    text = definition.read_text(encoding="utf-8")
+
+    assert "        rsync \\\n" in text
+
+
 def well_rows(tmp_path):
     return [
         {
