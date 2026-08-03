@@ -36,6 +36,7 @@ mkdir -p "$REPO_DIR/sge_logs"
 
 args=(
   python3 scripts/run_archival_plate_task.py
+  --task-index "${SGE_TASK_ID:?SGE_TASK_ID is required for the archival array}"
   --plate-manifest "$PLATE_MANIFEST"
   --well-manifest "$WELL_MANIFEST"
   --staged-input-root "$STAGED_INPUT_ROOT"

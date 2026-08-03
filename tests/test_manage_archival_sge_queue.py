@@ -5,10 +5,13 @@ from types import SimpleNamespace
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 from manage_archival_sge_queue import (  # noqa: E402
+    cmd_submit,
     qsub_command,
+    remote_staged_source_path,
     rsync_collect_command,
     rsync_move_file_command,
     rsync_stage_command,
+    rsync_stage_push_command,
     staged_source_path,
 )
 
@@ -31,6 +34,37 @@ def test_rsync_stage_does_not_remove_archive_source():
         "--ignore-existing",
         "/archive/source.mkv",
         "/scratch/stage/runA/source.mkv",
+    ]
+    assert "--remove-source-files" not in cmd
+
+
+def test_remote_staged_source_path_uses_cluster_visible_layout():
+    row = {"source_video_id": "runA", "source_path": "/shire/store/a/b/source.mkv"}
+
+    observed = remote_staged_source_path(row, "/wynton/scratch/me/staged_hevc/")
+
+    assert observed == "/wynton/scratch/me/staged_hevc/runA/source.mkv"
+
+
+def test_rsync_stage_push_uses_remote_mkdir_and_keeps_source():
+    cmd = rsync_stage_push_command(
+        "/shire/store/source.mkv",
+        "me@dt2.wynton.ucsf.edu",
+        "/wynton/scratch/me/staged_hevc/runA/source.mkv",
+        "ssh -o ControlMaster=auto",
+    )
+
+    assert cmd == [
+        "rsync",
+        "-a",
+        "--partial",
+        "--ignore-existing",
+        "-e",
+        "ssh -o ControlMaster=auto",
+        "--rsync-path",
+        "mkdir -p /wynton/scratch/me/staged_hevc/runA && rsync",
+        "/shire/store/source.mkv",
+        "me@dt2.wynton.ucsf.edu:/wynton/scratch/me/staged_hevc/runA/source.mkv",
     ]
     assert "--remove-source-files" not in cmd
 
@@ -88,3 +122,29 @@ def test_qsub_command_sets_sge_environment():
     assert "RUN_SIDECAR=1" in cmd[6]
     assert "CHUNK_SIZE=5" in cmd[6]
     assert cmd[-1] == "scripts/archival_plate_array.sge"
+
+
+def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
+    args = SimpleNamespace(
+        repo_dir="/repo",
+        plate_manifest="/wynton/scratch/me/manifests/plates.csv",
+        well_manifest="/wynton/scratch/me/manifests/wells.csv",
+        staged_input_root="/wynton/scratch/me/staged",
+        image="/wynton/scratch/me/image.sif",
+        apptainer_extra_bind="/wynton/scratch",
+        run_sidecar=False,
+        encoder="libaom-av1",
+        crf=35,
+        preset=8,
+        sge_script="scripts/archival_plate_array.sge",
+        chunk_size=5,
+        max_concurrent=3,
+        plate_count=12,
+        dry_run=True,
+    )
+
+    cmd_submit(args)
+
+    out = capsys.readouterr().out
+    assert "qsub -t 1-3 -tc 3" in out
+    assert "PLATE_MANIFEST=/wynton/scratch/me/manifests/plates.csv" in out

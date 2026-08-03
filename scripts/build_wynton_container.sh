@@ -44,23 +44,35 @@ ffmpeg_version="$("$APPTAINER_BIN" exec "$image_path" ffmpeg -hide_banner -versi
 sidecar_version="$("$APPTAINER_BIN" run "$image_path" --version)"
 dirty="$(git status --porcelain | wc -l | awk '{print $1}')"
 
-python3 - "$manifest_path" <<PY
+python3 - \
+  "$manifest_path" \
+  "$image_path" \
+  "$image_sha" \
+  "$DEF_FILE" \
+  "$def_sha" \
+  "$REPO_DIR" \
+  "$(git rev-parse HEAD)" \
+  "$dirty" \
+  "$apptainer_version" \
+  "$ffmpeg_version" \
+  "$sidecar_version" <<'PY'
 import json
 import pathlib
+import sys
 
 payload = {
-    "image_path": "$image_path",
-    "image_sha256": "$image_sha",
-    "definition_file": "$DEF_FILE",
-    "definition_sha256": "$def_sha",
-    "repo_dir": "$REPO_DIR",
-    "repo_commit": "$(git rev-parse HEAD)",
-    "repo_dirty": "$dirty",
-    "apptainer_version": "$apptainer_version",
-    "ffmpeg_version": "$ffmpeg_version",
-    "sidecar_version": "$sidecar_version",
+    "image_path": sys.argv[2],
+    "image_sha256": sys.argv[3],
+    "definition_file": sys.argv[4],
+    "definition_sha256": sys.argv[5],
+    "repo_dir": sys.argv[6],
+    "repo_commit": sys.argv[7],
+    "repo_dirty": sys.argv[8],
+    "apptainer_version": sys.argv[9],
+    "ffmpeg_version": sys.argv[10],
+    "sidecar_version": sys.argv[11],
 }
-path = pathlib.Path("$manifest_path")
+path = pathlib.Path(sys.argv[1])
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(payload, indent=2))
 PY

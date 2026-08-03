@@ -15,6 +15,14 @@ from run_archival_plate_task import (  # noqa: E402
 )
 
 
+def test_sge_wrapper_passes_array_task_index_into_clean_container():
+    script = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "archival_plate_array.sge"
+
+    text = script.read_text(encoding="utf-8")
+
+    assert '--task-index "${SGE_TASK_ID:?SGE_TASK_ID is required for the archival array}"' in text
+
+
 def well_rows(tmp_path):
     return [
         {

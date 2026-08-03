@@ -31,6 +31,18 @@ python scripts/make_well_archival_manifest.py \
 
 This writes `plate_archival_jobs.csv` next to the well manifest. Use the plate
 manifest for SGE; use the well manifest for expected outputs and provenance.
+Before submitting on Wynton, copy both manifest files to the cluster-visible
+manifest directory used in the submission command, for example:
+
+```bash
+ssh "$USER@dt2.wynton.ucsf.edu" \
+  "mkdir -p /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100"
+
+rsync -a --partial \
+  /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
+  /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/well_archival_outputs.csv \
+  "$USER@dt2.wynton.ucsf.edu:/wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/"
+```
 
 For the current `valar_96_well_analysis100` export, `--skip-missing-source-path`
 omits 81 sources that have no archive source path, leaving 6,481 plate tasks and
@@ -43,29 +55,51 @@ recorded separately in the manifest rows, for example
 
 ## 2. Stage a bounded number of HEVCs
 
+If the cluster can see the source paths in the manifest, stage from Wynton:
+
 ```bash
 python scripts/manage_archival_sge_queue.py stage \
+  --plate-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
+  --staged-input-root /wynton/scratch/$USER/encoder_based_ethology/staged_hevc \
+  --max-staged 20 \
+  --dry-run
+```
+
+If Wynton cannot mount or see the video store, push staging from the machine that
+can read `/shire/store`:
+
+```bash
+python scripts/manage_archival_sge_queue.py stage-push \
   --plate-manifest /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
-  --staged-input-root /cluster/scratch/$USER/staged_hevc \
+  --remote-host "$USER@dt2.wynton.ucsf.edu" \
+  --remote-staged-input-root /wynton/scratch/$USER/encoder_based_ethology/staged_hevc \
   --max-staged 20 \
   --dry-run
 ```
 
 Staging uses `rsync -a --partial --ignore-existing`. It does not remove the
-archive copy.
+archive copy. In the push-staging case, the Wynton jobs do not access the video
+store or your workstation connection; they read only from the staged HEVC copies
+under `/wynton/scratch/$USER/encoder_based_ethology/staged_hevc`.
+
+Use `dt1.wynton.ucsf.edu` or `dt2.wynton.ucsf.edu` for manifest, source-video,
+container, and result transfers. Reserve `log1`/`log2` for lightweight `qsub`,
+`qstat`, and filesystem checks. Wynton global scratch is not archival storage:
+files that are not modified for two weeks are eligible for automatic deletion.
 
 ## 3. Submit the SGE array
 
 ```bash
 python scripts/manage_archival_sge_queue.py submit \
-  --plate-manifest /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
-  --well-manifest /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/well_archival_outputs.csv \
-  --staged-input-root /cluster/scratch/$USER/staged_hevc \
-  --repo-dir /home/cole/code/encoder_based_ethology \
+  --plate-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
+  --well-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/well_archival_outputs.csv \
+  --staged-input-root /wynton/scratch/$USER/encoder_based_ethology/staged_hevc \
+  --repo-dir /wynton/scratch/$USER/encoder_based_ethology/source/encoder_based_ethology_<commit> \
   --image /path/to/archival_pipeline.sif \
-  --apptainer-extra-bind /cluster/scratch \
+  --apptainer-extra-bind /wynton/scratch \
   --chunk-size 10 \
   --max-concurrent 5 \
+  --plate-count 6481 \
   --dry-run
 ```
 
@@ -76,6 +110,11 @@ processes rows 11-20, and so on. `--max-concurrent` emits SGE `-tc` to cap the
 number of simultaneously running array tasks. This avoids submitting or running
 one independent job per source video while still letting each CPU process one
 video at a time.
+
+`--plate-count` is only needed when printing a dry-run command from a machine
+that cannot read the Wynton manifest path. When running the submit command on
+Wynton after the manifests have been copied, it can be omitted and the script
+will count rows directly from `--plate-manifest`.
 
 The SGE script requests one slot, `mem_free=6G`, `scratch=200G`, and
 `h_rt=24:00:00` by default. Adjust `scripts/archival_plate_array.sge` or submit
@@ -112,7 +151,7 @@ Collect only validated outputs:
 
 ```bash
 python scripts/manage_archival_sge_queue.py collect \
-  --plate-manifest /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
+  --plate-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
   --final-output-root /archive/encoder_based_ethology/runs \
   --dry-run
 ```
@@ -131,8 +170,8 @@ If staged HEVC files also need to be removed through rsync semantics, use:
 
 ```bash
 python scripts/manage_archival_sge_queue.py retire-staged-inputs \
-  --plate-manifest /media/ssd1/tmp/encoder_based_ethology_manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
-  --staged-input-root /cluster/scratch/$USER/staged_hevc \
+  --plate-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
+  --staged-input-root /wynton/scratch/$USER/encoder_based_ethology/staged_hevc \
   --retired-input-root /archive/encoder_based_ethology/retired_staged_hevc \
   --dry-run
 ```

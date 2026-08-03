@@ -121,6 +121,11 @@ quiet, ordinary, and high-motion plates.
 
 ## Shared `/wynton/scratch` budget
 
+If Wynton cannot mount the video store, push source videos from a machine that
+can read the store into `/wynton/scratch/$USER/encoder_based_ethology/staged_hevc`
+with `manage_archival_sge_queue.py stage-push`. Running SGE jobs then read only
+from the staged root and do not depend on a live workstation tunnel or mount.
+
 Let:
 
 ```text

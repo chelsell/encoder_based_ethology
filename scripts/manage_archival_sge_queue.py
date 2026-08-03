@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import pathlib
+import shlex
 import subprocess
 
 
@@ -40,6 +41,30 @@ def rsync_stage_command(source_path, staged_path):
         "--ignore-existing",
         str(source_path),
         str(staged_path),
+    ]
+
+
+def remote_staged_source_path(row, staged_input_root):
+    return f"{staged_input_root.rstrip('/')}/{row['source_video_id']}/{pathlib.Path(row['source_path']).name}"
+
+
+def remote_parent(path):
+    return path.rsplit("/", 1)[0]
+
+
+def rsync_stage_push_command(source_path, remote_host, remote_path, ssh_command="ssh"):
+    remote_dir = remote_parent(remote_path)
+    return [
+        "rsync",
+        "-a",
+        "--partial",
+        "--ignore-existing",
+        "-e",
+        ssh_command,
+        "--rsync-path",
+        f"mkdir -p {remote_dir} && rsync",
+        str(source_path),
+        f"{remote_host}:{remote_path}",
     ]
 
 
@@ -90,7 +115,7 @@ def qsub_command(args, plate_count):
 
 
 def run_or_print(cmd, dry_run):
-    print(" ".join(cmd))
+    print(shlex.join(cmd))
     if not dry_run:
         subprocess.run(cmd, check=True)
 
@@ -113,9 +138,30 @@ def cmd_stage(args):
     print(json.dumps({"already_staged": staged_existing, "newly_staged": staged, "max_staged": args.max_staged}, indent=2))
 
 
-def cmd_submit(args):
+def cmd_stage_push(args):
     rows = read_csv(args.plate_manifest)
-    cmd = qsub_command(args, len(rows))
+    staged = 0
+    missing = 0
+    for row in rows:
+        if args.max_staged and staged >= args.max_staged:
+            break
+        source = pathlib.Path(row["source_path"])
+        if not source.exists():
+            missing += 1
+            continue
+        remote_path = remote_staged_source_path(row, args.remote_staged_input_root)
+        run_or_print(rsync_stage_push_command(source, args.remote_host, remote_path, args.ssh_command), args.dry_run)
+        staged += 1
+    print(json.dumps({"pushed_or_requested": staged, "missing_local_sources": missing, "max_staged": args.max_staged}, indent=2))
+
+
+def cmd_submit(args):
+    if args.plate_count:
+        plate_count = args.plate_count
+    else:
+        rows = read_csv(args.plate_manifest)
+        plate_count = len(rows)
+    cmd = qsub_command(args, plate_count)
     run_or_print(cmd, args.dry_run)
 
 
@@ -166,6 +212,26 @@ def main():
     stage.add_argument("--dry-run", action="store_true")
     stage.set_defaults(func=cmd_stage)
 
+    stage_push = sub.add_parser(
+        "stage-push",
+        help="Push source videos from a machine that can see the video store to Wynton scratch over rsync/ssh.",
+    )
+    stage_push.add_argument("--plate-manifest", required=True)
+    stage_push.add_argument(
+        "--remote-host",
+        required=True,
+        help="SSH data-transfer host, e.g. user@dt2.wynton.ucsf.edu. Do not use a Wynton login node for bulk data.",
+    )
+    stage_push.add_argument(
+        "--remote-staged-input-root",
+        required=True,
+        help="Cluster-visible staged root, e.g. /wynton/scratch/$USER/encoder_based_ethology/staged_hevc.",
+    )
+    stage_push.add_argument("--max-staged", type=int, default=0, help="Maximum source videos to push; 0 means no cap.")
+    stage_push.add_argument("--ssh-command", default="ssh")
+    stage_push.add_argument("--dry-run", action="store_true")
+    stage_push.set_defaults(func=cmd_stage_push)
+
     submit = sub.add_parser("submit", help="Print or run qsub for the plate array.")
     submit.add_argument("--plate-manifest", required=True)
     submit.add_argument("--well-manifest", required=True)
@@ -180,6 +246,12 @@ def main():
     submit.add_argument("--run-sidecar", action="store_true")
     submit.add_argument("--chunk-size", type=int, default=1, help="Plate videos processed serially by each SGE task.")
     submit.add_argument("--max-concurrent", type=int, default=0, help="SGE -tc concurrency cap for array tasks; 0 omits -tc.")
+    submit.add_argument(
+        "--plate-count",
+        type=int,
+        default=0,
+        help="Expected plate rows. Useful for dry-run from a machine that cannot read the cluster-side manifest path.",
+    )
     submit.add_argument("--dry-run", action="store_true")
     submit.set_defaults(func=cmd_submit)
 
