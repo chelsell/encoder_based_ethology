@@ -106,15 +106,20 @@ def qsub_command(args, plate_count):
         "CRF": str(args.crf),
         "PRESET": str(args.preset),
         "ENCODER_THREADS": str(args.encoder_threads),
+        "ENCODER_PROCESSES": str(args.encoder_processes),
         "PROGRESS_INTERVAL_SECONDS": str(args.progress_interval_seconds),
         "VALIDATION_MODE": args.validation_mode,
         "VALIDATION_SENTINEL_COUNT": str(args.validation_sentinel_count),
         "MAX_SOURCE_DURATION_SECONDS": str(args.max_source_duration_seconds),
     }
     env_arg = ",".join(f"{k}={v}" for k, v in env.items())
-    if args.encoder_threads > args.sge_slots:
+    if args.encoder_threads < 1 or args.encoder_processes < 1 or args.sge_slots < 1:
+        raise ValueError("encoder threads, encoder processes, and SGE slots must all be at least 1")
+    requested_encoder_cpus = args.encoder_threads * args.encoder_processes
+    if requested_encoder_cpus > args.sge_slots:
         raise ValueError(
-            f"encoder threads ({args.encoder_threads}) exceed requested SGE slots ({args.sge_slots})"
+            f"encoder processes x threads ({args.encoder_processes} x {args.encoder_threads} = "
+            f"{requested_encoder_cpus}) exceed requested SGE slots ({args.sge_slots})"
         )
     cmd = [
         "qsub",
@@ -283,6 +288,7 @@ def main():
     submit.add_argument("--crf", type=int, default=35)
     submit.add_argument("--preset", type=int, default=8)
     submit.add_argument("--encoder-threads", type=int, default=1)
+    submit.add_argument("--encoder-processes", type=int, default=1)
     submit.add_argument("--progress-interval-seconds", type=float, default=30.0)
     submit.add_argument(
         "--validation-mode",

@@ -14,6 +14,7 @@ from run_archival_plate_task import (  # noqa: E402
     ffprobe_duration_seconds,
     ffprobe_packet_summary,
     map_well_rows_to_output_dir,
+    partition_well_rows,
     resolve_source_path,
     rsync_copy_command,
     rsync_tree_command,
@@ -112,11 +113,24 @@ def test_build_ffmpeg_command_maps_all_wells_to_partial_outputs(tmp_path):
     assert "[v1]" in cmd
     assert str(pathlib.Path(rows[0]["well_archive_path"]).with_name("runA_A01.av1.partial.mkv")) in cmd
     assert cmd.count("-cpu-used") == 2
-    assert cmd.count("-threads") == 2
+    assert cmd.count("-threads") == 3
     assert cmd.count("1") >= 2
     assert cmd[cmd.index("-progress") + 1] == str(progress)
     assert cmd[cmd.index("-stats_period") + 1] == "30"
     assert progress.parent.is_dir()
+
+
+def test_partition_well_rows_balances_contiguous_encoder_groups(tmp_path):
+    rows = [{"well_index": str(index)} for index in range(10)]
+
+    groups = partition_well_rows(rows, 3)
+
+    assert [len(group) for group in groups] == [4, 3, 3]
+    assert [[row["well_index"] for row in group] for group in groups] == [
+        ["0", "1", "2", "3"],
+        ["4", "5", "6"],
+        ["7", "8", "9"],
+    ]
 
 
 def test_build_ffmpeg_command_rejects_invalid_thread_and_progress_settings(tmp_path):
@@ -158,6 +172,7 @@ def test_run_one_plate_publishes_encoding_manifest_before_ffmpeg(tmp_path, monke
         crf=35,
         preset=8,
         encoder_threads=1,
+        encoder_processes=1,
         progress_interval_seconds=30.0,
         validation_mode="full-decode",
         validation_sentinel_count=2,

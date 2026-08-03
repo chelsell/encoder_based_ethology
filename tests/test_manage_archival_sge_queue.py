@@ -109,6 +109,7 @@ def test_qsub_command_sets_sge_environment():
         crf=35,
         preset=8,
         encoder_threads=1,
+        encoder_processes=1,
         progress_interval_seconds=30.0,
         validation_mode="packet-count-sentinel",
         validation_sentinel_count=5,
@@ -140,6 +141,7 @@ def test_qsub_command_sets_sge_environment():
     assert "VALIDATION_SENTINEL_COUNT=5" in env_arg
     assert "MAX_SOURCE_DURATION_SECONDS=3600.0" in env_arg
     assert "ENCODER_THREADS=1" in env_arg
+    assert "ENCODER_PROCESSES=1" in env_arg
     assert "PROGRESS_INTERVAL_SECONDS=30.0" in env_arg
     assert cmd[-1] == "scripts/archival_plate_array.sge"
 
@@ -157,6 +159,7 @@ def test_qsub_command_rejects_more_encoder_threads_than_sge_slots():
         crf=35,
         preset=8,
         encoder_threads=8,
+        encoder_processes=1,
         progress_interval_seconds=30.0,
         validation_mode="full-decode",
         validation_sentinel_count=5,
@@ -210,6 +213,7 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
         crf=35,
         preset=8,
         encoder_threads=1,
+        encoder_processes=1,
         progress_interval_seconds=30.0,
         validation_mode="packet-count-sentinel",
         validation_sentinel_count=5,

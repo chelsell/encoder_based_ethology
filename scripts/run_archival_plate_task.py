@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import concurrent.futures
 import csv
 import datetime
 import json
@@ -137,6 +138,20 @@ def build_crop_filter(well_rows):
     return ";".join(parts)
 
 
+def partition_well_rows(well_rows, process_count):
+    if process_count < 1:
+        raise ValueError("encoder_processes must be at least 1")
+    process_count = min(process_count, len(well_rows))
+    size, remainder = divmod(len(well_rows), process_count)
+    groups = []
+    start = 0
+    for index in range(process_count):
+        stop = start + size + (1 if index < remainder else 0)
+        groups.append(well_rows[start:stop])
+        start = stop
+    return groups
+
+
 def final_and_partial_paths(well_rows):
     pairs = []
     for row in well_rows:
@@ -171,7 +186,7 @@ def build_ffmpeg_command(
         cmd.append("-y")
     else:
         cmd.append("-n")
-    cmd.extend(["-i", str(source_path), "-filter_complex", build_crop_filter(well_rows)])
+    cmd.extend(["-threads", "1", "-i", str(source_path), "-filter_complex", build_crop_filter(well_rows)])
     for i, (_final, partial) in enumerate(final_and_partial_paths(well_rows)):
         partial.parent.mkdir(parents=True, exist_ok=True)
         cmd.extend(["-map", f"[v{i}]", "-an"])
@@ -376,7 +391,16 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
     well_rows = map_well_rows_to_output_dir(manifest_well_rows, local_output_dir)
     log_path = output_dir / "manifest" / "archival_plate_task.json"
     validation_path = output_dir / "manifest" / "archival_validation.json"
-    progress_path = output_dir / "logs" / "ffmpeg_progress.log"
+    if args.encoder_processes < 1:
+        raise SystemExit("encoder_processes must be at least 1")
+    well_groups = partition_well_rows(well_rows, args.encoder_processes)
+    if len(well_groups) == 1:
+        progress_paths = [output_dir / "logs" / "ffmpeg_progress.log"]
+    else:
+        progress_paths = [
+            output_dir / "logs" / f"ffmpeg_progress.part{index:02d}.log"
+            for index in range(1, len(well_groups) + 1)
+        ]
 
     sge_nslots = int(os.environ.get("NSLOTS", "1"))
     payload = {
@@ -396,9 +420,10 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "crf": args.crf,
         "preset": args.preset,
         "encoder_threads": args.encoder_threads,
+        "encoder_processes": args.encoder_processes,
         "sge_nslots": sge_nslots,
         "progress_interval_seconds": args.progress_interval_seconds,
-        "ffmpeg_progress_path": str(progress_path),
+        "ffmpeg_progress_paths": [str(path) for path in progress_paths],
         "validation_mode": args.validation_mode,
         "validation_sentinel_count": args.validation_sentinel_count,
         "max_source_duration_seconds": args.max_source_duration_seconds,
@@ -406,11 +431,13 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
         "started_monotonic": time.monotonic(),
     }
 
-    if args.encoder_threads > sge_nslots:
-        payload["status"] = "encoder_threads_exceed_sge_slots"
+    requested_encoder_cpus = args.encoder_threads * args.encoder_processes
+    if requested_encoder_cpus > sge_nslots:
+        payload["status"] = "encoder_cpu_request_exceeds_sge_slots"
         write_json(log_path, payload)
         raise SystemExit(
-            f"encoder threads ({args.encoder_threads}) exceed allocated SGE slots ({sge_nslots})"
+            f"encoder processes x threads ({args.encoder_processes} x {args.encoder_threads} = "
+            f"{requested_encoder_cpus}) exceed allocated SGE slots ({sge_nslots})"
         )
 
     if not source_path.exists():
@@ -450,36 +477,46 @@ def run_one_plate(args, plate_row, task_index, task_count, chunk_index=None, chu
     local_source, source_copy_cmd = prepare_local_source(source_path, work_root, plate_row["source_video_id"], args.dry_run)
     if source_copy_cmd:
         payload["source_copy_command"] = source_copy_cmd
-    cmd = build_ffmpeg_command(
-        args.ffmpeg,
-        local_source,
-        well_rows,
-        args.encoder,
-        args.crf,
-        args.preset,
-        args.force,
-        encoder_threads=args.encoder_threads,
-        progress_path=progress_path,
-        progress_interval_seconds=args.progress_interval_seconds,
-    )
-    payload["ffmpeg_command"] = cmd
+    commands = [
+        build_ffmpeg_command(
+            args.ffmpeg,
+            local_source,
+            group,
+            args.encoder,
+            args.crf,
+            args.preset,
+            args.force,
+            encoder_threads=args.encoder_threads,
+            progress_path=progress_path,
+            progress_interval_seconds=args.progress_interval_seconds,
+        )
+        for group, progress_path in zip(well_groups, progress_paths)
+    ]
+    payload["ffmpeg_commands"] = commands
+    if len(commands) == 1:
+        payload["ffmpeg_command"] = commands[0]
     if args.dry_run:
         payload["status"] = "dry_run"
         write_json(log_path, payload)
-        print(" ".join(cmd))
+        for cmd in commands:
+            print(" ".join(cmd))
         return payload
 
     payload["status"] = "encoding"
     payload["encoding_started_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     write_json(log_path, payload)
     started = time.monotonic()
-    completed = subprocess.run(cmd, check=False)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(commands)) as executor:
+        completed = list(executor.map(lambda cmd: subprocess.run(cmd, check=False), commands))
     payload["ffmpeg_elapsed_seconds"] = round(time.monotonic() - started, 6)
-    payload["ffmpeg_returncode"] = completed.returncode
-    if completed.returncode != 0:
+    payload["ffmpeg_returncodes"] = [result.returncode for result in completed]
+    if len(completed) == 1:
+        payload["ffmpeg_returncode"] = completed[0].returncode
+    failed_returncodes = [result.returncode for result in completed if result.returncode != 0]
+    if failed_returncodes:
         payload["status"] = "ffmpeg_failed"
         write_json(log_path, payload)
-        raise SystemExit(completed.returncode)
+        raise SystemExit(failed_returncodes[0])
 
     promote_partials(well_rows)
     validation_rows = validate_outputs(
@@ -536,6 +573,7 @@ def main():
     parser.add_argument("--crf", type=int, default=35)
     parser.add_argument("--preset", type=int, default=8)
     parser.add_argument("--encoder-threads", type=int, default=1)
+    parser.add_argument("--encoder-processes", type=int, default=1)
     parser.add_argument("--progress-interval-seconds", type=float, default=30.0)
     parser.add_argument(
         "--validation-mode",

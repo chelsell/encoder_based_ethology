@@ -110,6 +110,7 @@ python scripts/manage_archival_sge_queue.py submit \
   --apptainer-extra-bind /wynton/scratch \
   --chunk-size 1 \
   --max-concurrent 5 \
+  --encoder-processes 1 \
   --encoder-threads 1 \
   --progress-interval-seconds 30 \
   --validation-mode packet-count-sentinel \
@@ -144,12 +145,20 @@ ordinary sources; the p90/p99 compressed-size stress tests request 50G scratch.
 Observed maximum virtual memory is about 2.3G. No production scratch default has
 been frozen because no full-length task had completed at the benchmark snapshot.
 
-Each AV1 output is explicitly limited to `--encoder-threads` threads. The
-submission helper emits `qsub -pe smp <n>` from `--sge-slots` and rejects
-`--encoder-threads` values larger than that allocation. The worker records
-`$NSLOTS` and independently rejects an over-threaded launch. Increasing either
-value requires a matched throughput benchmark; one-thread/one-slot operation is
-a diagnostic baseline, not a production throughput default.
+Each AV1 output is explicitly limited to `--encoder-threads` threads.
+`--encoder-processes` partitions the wells into balanced groups and runs one
+FFmpeg process per group against the node-local source. This repeats source
+decode per group but allows independent tiny-well encoders to run concurrently;
+the one-process FFmpeg path did not use more than roughly one core even with
+libaom `-threads 8`. Input decoding and each output encoder are explicitly
+limited to one thread in the process-parallel benchmark.
+
+The submission helper emits `qsub -pe smp <n>` from `--sge-slots` and rejects
+`--encoder-processes * --encoder-threads` larger than that allocation. The
+worker records `$NSLOTS` and independently rejects an over-threaded launch.
+Increasing these values requires a matched throughput benchmark;
+one-process/one-thread/one-slot operation is a diagnostic baseline, not a
+production throughput default.
 
 The SGE wrapper passes `NSLOTS` explicitly through Apptainer `--cleanenv`; do
 not rely on the scheduler environment surviving clean-container launch.
