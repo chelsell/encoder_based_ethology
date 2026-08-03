@@ -16,6 +16,11 @@ The per-well sidecar is in the coordinate domain of the well crop. It should be
 treated as a well-domain product, not a plate-domain vector field. The split
 manifest is therefore part of the scientific provenance.
 
+The required transcode-time QC traces and the boundary between source-decode
+measurements and downstream window summaries are specified in
+[`transcode_qc_feature_contract.md`](transcode_qc_feature_contract.md) and
+`configs/qc/clipsift_qc_bridge_v0_1.json`.
+
 The source plate video should not be decoded independently once per well. A
 historical archival job should be scheduled at the plate-video level, decode the
 HEVC stream once, and fan out crop, AV1 encode, image-dynamics, and optional MV
@@ -143,3 +148,9 @@ well-domain sidecar. Keep a separate lightweight plate-level QC product for:
 
 This companion is a QC covariate, not a replacement for per-well behavior
 features.
+
+For QC, the production companion must preserve static-reference image dynamics,
+signed intensity change, whole-plate registration shift plus response, the
+fraction of wells active concurrently, and robust plate activity location and
+dispersion. These are higher-priority artifact covariates than additional raw
+MV peak-magnitude transforms.

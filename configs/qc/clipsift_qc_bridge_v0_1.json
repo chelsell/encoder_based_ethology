@@ -1,0 +1,89 @@
+{
+  "feature_set": "clipsift_qc_bridge_v0_1",
+  "purpose": "Two-axis source-domain QC: visible event activity plus technical/common-mode evidence",
+  "coordinate_domain": "source_well_plus_plate_context",
+  "decision_semantics": {
+    "automatic_rejection": false,
+    "keep_quiet_separate_from_artifact": true,
+    "use_ambiguous_as_uncertainty_set": true
+  },
+  "image_dynamics": {
+    "lags_frames": [1, 3, 10],
+    "changed_pixel_thresholds": [10],
+    "retain_absolute_intensity_energy": true,
+    "retain_signed_mean_intensity_delta": true
+  },
+  "registration": {
+    "method": "phase_correlation",
+    "retain_response": true
+  },
+  "motion_vectors": {
+    "method": "mestimate",
+    "active_vector_threshold_px": "versioned_parameter_required",
+    "retain_frame_summaries": true,
+    "preaggregate_spatial_grid": [4, 4],
+    "retain_full_vector_rows": false
+  },
+  "temporal": {
+    "fine": "source_cadence",
+    "bins_ms": [50, 100, 250]
+  },
+  "transcode_trace_features": {
+    "well": [
+      "imgdiff_l1_changed_fraction",
+      "imgdiff_l1_abs_mean",
+      "imgdiff_l3_changed_fraction",
+      "imgdiff_l3_abs_mean",
+      "imgdiff_l10_changed_fraction",
+      "imgdiff_l10_abs_mean",
+      "frame_mean_intensity_delta_abs",
+      "frame_mean_intensity_signed_delta",
+      "mv_magnitude_sum",
+      "mv_magnitude_p95",
+      "mv_active_fraction",
+      "mv_directional_coherence",
+      "mv_resultant_magnitude",
+      "active_spatial_bin_fraction",
+      "motion_spatial_entropy",
+      "motion_max_bin_fraction",
+      "motion_centroid_x",
+      "motion_centroid_y",
+      "motion_wall_fraction"
+    ],
+    "plate_context": [
+      "reference_imgdiff_changed_fraction",
+      "reference_intensity_delta_abs",
+      "reference_intensity_signed_delta",
+      "plate_registration_shift_x_px",
+      "plate_registration_shift_y_px",
+      "plate_registration_shift_px",
+      "plate_registration_response",
+      "plate_well_active_fraction",
+      "plate_motion_directional_resultant",
+      "plate_activity_median",
+      "plate_activity_dispersion"
+    ]
+  },
+  "derived_after_transcode": {
+    "window_summaries": ["median", "p95", "max", "auc", "active_frame_fraction"],
+    "features": [
+      "mv_bout_fraction",
+      "duplicate_like_frame_fraction",
+      "corrupt_like_frame_fraction",
+      "imgdiff_l1_to_l10_ratio",
+      "motion_centroid_displacement",
+      "mv_to_imgdiff_activity_ratio",
+      "well_to_reference_imgdiff_ratio",
+      "well_to_plate_median_activity_ratio",
+      "registration_explained_activity_fraction",
+      "plate_synchronous_active_frame_fraction",
+      "local_support_weighted_to_raw_mv_ratio"
+    ],
+    "ratio_floor_policy": "versioned_robust_floor_required"
+  },
+  "plate_context": {
+    "static_reference_mask": "required",
+    "concurrent_well_activity": true,
+    "align_by": ["source_frame_index", "pts"]
+  }
+}
