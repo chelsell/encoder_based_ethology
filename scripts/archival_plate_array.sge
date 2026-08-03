@@ -79,7 +79,7 @@ if [[ -n "$IMAGE" ]]; then
   if [[ -n "$APPTAINER_EXTRA_BIND" ]]; then
     bind_args+=(--bind "$APPTAINER_EXTRA_BIND")
   fi
-  "$APPTAINER_BIN" exec --cleanenv "${bind_args[@]}" "$IMAGE" "${args[@]}"
+  "$APPTAINER_BIN" exec --cleanenv --env "NSLOTS=${NSLOTS:-1}" "${bind_args[@]}" "$IMAGE" "${args[@]}"
 else
   "${args[@]}"
 fi

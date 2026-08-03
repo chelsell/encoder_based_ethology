@@ -30,6 +30,7 @@ def test_sge_wrapper_passes_array_task_index_into_clean_container():
     text = script.read_text(encoding="utf-8")
 
     assert '--task-index "${SGE_TASK_ID:?SGE_TASK_ID is required for the archival array}"' in text
+    assert '--cleanenv --env "NSLOTS=${NSLOTS:-1}"' in text
 
 
 def test_archival_container_installs_rsync_for_local_scratch_copies():

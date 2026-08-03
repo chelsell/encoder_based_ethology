@@ -151,6 +151,9 @@ submission helper emits `qsub -pe smp <n>` from `--sge-slots` and rejects
 value requires a matched throughput benchmark; one-thread/one-slot operation is
 a diagnostic baseline, not a production throughput default.
 
+The SGE wrapper passes `NSLOTS` explicitly through Apptainer `--cleanenv`; do
+not rely on the scheduler environment surviving clean-container launch.
+
 `--mem-free` is a per-slot SGE request. Set it with the slot count in mind;
 requesting eight slots at `--mem-free 6G` reserves approximately 48G. `--scratch`
 is the node-local work request per task, and `--h-rt` is the hard runtime limit.
