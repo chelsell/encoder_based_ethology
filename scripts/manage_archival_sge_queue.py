@@ -125,6 +125,8 @@ def qsub_command(args, plate_count):
         str(args.sge_slots),
         "-o",
         str(pathlib.Path(args.sge_log_dir).resolve()),
+        "-l",
+        f"mem_free={args.mem_free},scratch={args.scratch},h_rt={args.h_rt}",
     ]
     if args.max_concurrent:
         cmd.extend(["-tc", str(args.max_concurrent)])
@@ -274,6 +276,9 @@ def main():
         help="Scheduler output directory outside the immutable source checkout.",
     )
     submit.add_argument("--sge-slots", type=int, default=1, help="SGE smp slots requested per array task.")
+    submit.add_argument("--mem-free", default="6G", help="SGE mem_free request per slot.")
+    submit.add_argument("--scratch", default="200G", help="SGE node-local scratch request per task.")
+    submit.add_argument("--h-rt", default="24:00:00", help="SGE hard runtime limit.")
     submit.add_argument("--encoder", default="libaom-av1")
     submit.add_argument("--crf", type=int, default=35)
     submit.add_argument("--preset", type=int, default=8)

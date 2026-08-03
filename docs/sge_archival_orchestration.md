@@ -103,6 +103,9 @@ python scripts/manage_archival_sge_queue.py submit \
   --repo-dir /wynton/scratch/$USER/encoder_based_ethology/source/encoder_based_ethology_<commit> \
   --sge-log-dir /wynton/scratch/$USER/encoder_based_ethology/sge_logs/<test-wave> \
   --sge-slots 1 \
+  --mem-free 4G \
+  --scratch 20G \
+  --h-rt 24:00:00 \
   --image /path/to/archival_pipeline.sif \
   --apptainer-extra-bind /wynton/scratch \
   --chunk-size 1 \
@@ -147,6 +150,10 @@ submission helper emits `qsub -pe smp <n>` from `--sge-slots` and rejects
 `$NSLOTS` and independently rejects an over-threaded launch. Increasing either
 value requires a matched throughput benchmark; one-thread/one-slot operation is
 a diagnostic baseline, not a production throughput default.
+
+`--mem-free` is a per-slot SGE request. Set it with the slot count in mind;
+requesting eight slots at `--mem-free 6G` reserves approximately 48G. `--scratch`
+is the node-local work request per task, and `--h-rt` is the hard runtime limit.
 
 Before FFmpeg starts, the worker publishes
 `manifest/archival_plate_task.json` with `status: encoding`. FFmpeg writes a

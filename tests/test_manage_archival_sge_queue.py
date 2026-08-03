@@ -116,16 +116,20 @@ def test_qsub_command_sets_sge_environment():
         sge_script="scripts/archival_plate_array.sge",
         sge_log_dir="/scratch/logs/test-wave",
         sge_slots=1,
+        mem_free="2G",
+        scratch="20G",
+        h_rt="12:00:00",
         chunk_size=5,
         max_concurrent=3,
     )
 
     cmd = qsub_command(args, 12)
 
-    assert cmd[:10] == [
-        "qsub", "-t", "1-3", "-pe", "smp", "1", "-o", "/scratch/logs/test-wave", "-tc", "3"
+    assert cmd[:12] == [
+        "qsub", "-t", "1-3", "-pe", "smp", "1", "-o", "/scratch/logs/test-wave",
+        "-l", "mem_free=2G,scratch=20G,h_rt=12:00:00", "-tc", "3"
     ]
-    env_arg = cmd[11]
+    env_arg = cmd[13]
     assert "PLATE_MANIFEST=/repo/manifests/plates.csv" in env_arg
     assert "WELL_MANIFEST=/repo/manifests/wells.csv" in env_arg
     assert "STAGED_INPUT_ROOT=/scratch/stage" in env_arg
@@ -160,6 +164,9 @@ def test_qsub_command_rejects_more_encoder_threads_than_sge_slots():
         sge_script="scripts/archival_plate_array.sge",
         sge_log_dir="/scratch/logs/test-wave",
         sge_slots=4,
+        mem_free="2G",
+        scratch="20G",
+        h_rt="12:00:00",
         chunk_size=1,
         max_concurrent=1,
     )
@@ -210,6 +217,9 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
         sge_script="scripts/archival_plate_array.sge",
         sge_log_dir="/wynton/scratch/me/logs/test-wave",
         sge_slots=1,
+        mem_free="2G",
+        scratch="20G",
+        h_rt="12:00:00",
         chunk_size=5,
         max_concurrent=3,
         plate_count=12,
@@ -219,5 +229,8 @@ def test_submit_dry_run_can_use_plate_count_without_reading_manifest(capsys):
     cmd_submit(args)
 
     out = capsys.readouterr().out
-    assert "qsub -t 1-3 -pe smp 1 -o /wynton/scratch/me/logs/test-wave -tc 3" in out
+    assert (
+        "qsub -t 1-3 -pe smp 1 -o /wynton/scratch/me/logs/test-wave "
+        "-l mem_free=2G,scratch=20G,h_rt=12:00:00 -tc 3" in out
+    )
     assert "PLATE_MANIFEST=/wynton/scratch/me/manifests/plates.csv" in out
