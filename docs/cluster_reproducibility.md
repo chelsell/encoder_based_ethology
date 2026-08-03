@@ -21,6 +21,13 @@ one source HEVC decode
 The per-well manifest is an output inventory. The plate manifest is the cluster
 job list.
 
+Independent well AV1 files are the current working durable-video candidate. A
+10-second same-codec measurement found a 1.74x storage cost relative to one
+whole-plate AV1. This premium is being accepted for further testing because the
+well files are expected to simplify downstream storage and analysis. Preserve a
+checksum-verified recoverable HEVC backup while this decision remains under
+validation.
+
 For the current SGE command flow, see
 [sge_archival_orchestration.md](sge_archival_orchestration.md). For Wynton
 container rebuilds and disk-budget planning, see

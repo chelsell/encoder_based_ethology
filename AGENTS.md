@@ -55,16 +55,23 @@ Use a two-layer archival design:
 
 ```text
 historical source video
-    ├── AV1 archival video
+    ├── 96 independent well AV1 archival videos from one canonical decode
     ├── source-domain motion sidecar v1
     ├── source-domain image-dynamics / frame-difference measurements
     └── manifest, checksums, stimulus metadata, geometry, provenance
 ```
 
+Independent well AV1 files are the current working durable-video architecture.
+A controlled 10-second comparison measured a 1.74x storage cost relative to one
+whole-plate AV1; that premium is accepted for further testing because well files
+better support the planned downstream architecture. Whole-plate AV1 remains a
+comparison arm. Keep the source HEVC recoverable from a checksum-verified cloud
+backup while this architecture and the source-domain QC path are being validated.
+
 For future acquisition, keep storage-clearing transcode reliability and rich scientific analysis as separable operational concerns:
 
 ```text
-capture → verified AV1 archive + manifest + minimum QC
+capture → verified AV1 well archives + manifest + minimum QC
 archive → versioned feature extraction / review / validation jobs
 ```
 
@@ -148,7 +155,8 @@ runs/<run_id>/
     geometry_manifest.json
     checksums.json
   video/
-    <run_id>.av1.mkv
+    wells/
+      <run_id>_<well_id>.av1.mkv
   sidecar/
     mv_v1/
       metadata.json
@@ -187,15 +195,17 @@ acquisition:
   nominal_fps: ...
   observed_frame_count: ...
   timebase: ...
-video_archive:
-  archive_path: ...
-  archive_sha256: ...
+video_archives:
+  mode: independent_wells
+  inventory_path: ...
+  expected_well_count: 96
   codec: av1
   encoder: ...
   encoder_parameters: ...
   ffmpeg_version: ...
   container_digest: ...
   verification_status: ...
+  per_well_fields: [well_id, archive_path, archive_sha256, crop, frame_count, timebase]
 stimuli:
   schedule_path: ...
   timestamp_reference: ...
@@ -756,7 +766,7 @@ The review interface should make it easy to compare wells within a plate, matche
 
 Historical transcoding should produce:
 
-1. a verified AV1 archival video;
+1. 96 verified independent well AV1 archival videos from one source decode;
 2. source-domain motion sidecar v1;
 3. source-domain image-dynamics measurements;
 4. complete manifest and checksums;
@@ -770,7 +780,7 @@ Preferred conceptual flow:
 source video
     ↓
 single canonical decode
-    ├── AV1 encode branch
+    ├── deterministic well crops → 96 AV1 encode outputs
     ├── mestimate / vector extraction branch
     ├── frame-difference / local-support branch
     └── metadata / manifest writer

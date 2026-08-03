@@ -5,6 +5,11 @@ unit is one source plate HEVC video. Each task decodes that source once, crops
 all wells from a versioned ROI table, writes per-well AV1 outputs, validates the
 outputs, and optionally runs per-well sidecar summaries.
 
+The current working architecture retains the 96 independent well videos as the
+candidate durable video representation. Whole-plate AV1 remains a comparison
+arm. The independent outputs cost 1.74 times as many bytes in a controlled
+10-second sample, a premium currently accepted for further end-to-end testing.
+
 On Wynton, each SGE task uses job-local `$TMPDIR` for the active HEVC copy,
 partial AV1 outputs, validation, and optional sidecar work. Validated outputs
 are then rsynced back to the shared output directory recorded in the manifest.
@@ -82,10 +87,11 @@ archive copy. In the push-staging case, the Wynton jobs do not access the video
 store or your workstation connection; they read only from the staged HEVC copies
 under `/wynton/scratch/$USER/encoder_based_ethology/staged_hevc`.
 
-Use `dt1.wynton.ucsf.edu` or `dt2.wynton.ucsf.edu` for manifest, source-video,
-container, and result transfers. Reserve `log1`/`log2` for lightweight `qsub`,
-`qstat`, and filesystem checks. Wynton global scratch is not archival storage:
-files that are not modified for two weeks are eligible for automatic deletion.
+Use a dedicated Wynton data-transfer node for manifest, source-video, container,
+and result transfers. `dt2.wynton.ucsf.edu` is the tested path for this project.
+Reserve `log1`/`log2` for lightweight `qsub`, `qstat`, and filesystem checks.
+Wynton global scratch is not archival storage: files that are not modified for
+two weeks are eligible for automatic deletion.
 
 ## 3. Submit the SGE array
 
@@ -97,28 +103,33 @@ python scripts/manage_archival_sge_queue.py submit \
   --repo-dir /wynton/scratch/$USER/encoder_based_ethology/source/encoder_based_ethology_<commit> \
   --image /path/to/archival_pipeline.sif \
   --apptainer-extra-bind /wynton/scratch \
-  --chunk-size 10 \
+  --chunk-size 1 \
   --max-concurrent 5 \
+  --validation-mode packet-count-sentinel \
+  --validation-sentinel-count 5 \
+  --max-source-duration-seconds 3600 \
   --plate-count 6481 \
   --dry-run
 ```
 
 Remove `--dry-run` to call `qsub`. The generated command submits
-`scripts/archival_plate_array.sge` with an array range over chunks. With
-`--chunk-size 10`, SGE task 1 processes plate rows 1-10 serially, task 2
-processes rows 11-20, and so on. `--max-concurrent` emits SGE `-tc` to cap the
-number of simultaneously running array tasks. This avoids submitting or running
-one independent job per source video while still letting each CPU process one
-video at a time.
+`scripts/archival_plate_array.sge` with an array range over chunks. Current
+benchmarks use `--chunk-size 1`, so each array task processes exactly one source
+plate. `--max-concurrent` emits SGE `-tc` to cap simultaneously running tasks.
+Larger serial chunks remain supported, but should not be used until per-plate
+runtime and failure recovery are well characterized.
 
 `--plate-count` is only needed when printing a dry-run command from a machine
 that cannot read the Wynton manifest path. When running the submit command on
 Wynton after the manifests have been copied, it can be omitted and the script
 will count rows directly from `--plate-manifest`.
 
-The SGE script requests one slot, `mem_free=6G`, `scratch=200G`, and
-`h_rt=24:00:00` by default. Adjust `scripts/archival_plate_array.sge` or submit
-flags if a benchmarked plate requires more local scratch or runtime.
+The checked-in SGE script has conservative directives of one slot,
+`mem_free=6G`, `scratch=200G`, and `h_rt=24:00:00`. Current direct pilot
+submissions override these to one slot, `mem_free=4G`, and `scratch=20G` for
+ordinary sources; the p90/p99 compressed-size stress tests request 50G scratch.
+Observed maximum virtual memory is about 2.3G. No production scratch default has
+been frozen because no full-length task had completed at the benchmark snapshot.
 
 The default output check is `--validation-mode packet-count-sentinel`: every
 well is checked for AV1 codec, expected geometry, positive and mutually
@@ -172,7 +183,7 @@ Collect only validated outputs:
 ```bash
 python scripts/manage_archival_sge_queue.py collect \
   --plate-manifest /wynton/scratch/$USER/encoder_based_ethology/manifests/valar_96_well_analysis100/plate_archival_jobs.csv \
-  --final-output-root /archive/encoder_based_ethology/runs \
+  --final-output-root /shire/store/<durable-archival-prefix> \
   --dry-run
 ```
 
@@ -183,6 +194,10 @@ rsync -a --partial --remove-source-files <cluster_output_dir>/ <final_output_dir
 ```
 
 This is the intended cluster-side file removal path for validated outputs.
+The exact `/shire/store` layout is not frozen. The current candidate is a
+versioned product alongside each submission's existing `camera` tree. Never
+collect directly over an existing HEVC path, and do not remove a primary source
+until its cloud backup identity and checksum have been recorded.
 
 ## 5. Retire staged inputs
 
@@ -206,6 +221,8 @@ retention policy.
 - The worker currently creates AV1 well videos from the source HEVC and can run
   optional sidecars after that. Those sidecars are archive-domain measurements,
   not source-domain cropped-stream measurements.
+- `RUN_SIDECAR=0` is used for the active encoder/validation benchmarks. It does
+  not produce the required historical source-domain QC product.
 - A production full-pipeline image should include this repository's scripts,
   FFmpeg/ffprobe, and `mestimate-sidecar`; the current sidecar SIF is labeled as
   sidecar-only.

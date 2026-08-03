@@ -198,6 +198,18 @@ The cluster does not need the full local working tree; use
 [docs/repo_cleaning_audit.md](docs/repo_cleaning_audit.md) to stage a minimal
 source bundle.
 
+The current archival candidate intentionally writes 96 independent well AV1
+videos from one source decode. A controlled 10-second comparison measured the
+combined well outputs at 1.74 times the bytes of a whole-plate AV1, despite the
+crops covering 71.7% of the source pixels. That storage premium is currently
+accepted for further testing because independent well videos simplify the
+downstream architecture and the source HEVC is expected to remain recoverable
+from a checksum-verified cloud backup. This is a benchmarked working decision,
+not yet authorization to remove source files.
+
+Current Wynton behavior and measured pilot details are recorded in
+[docs/wynton_benchmark_status_20260802.md](docs/wynton_benchmark_status_20260802.md).
+
 ```bash
 python scripts/make_well_archival_manifest.py \
   --source-catalog /home/cole/code/ROI_improvement/data/catalog/valar_96_well_source_catalog.csv \

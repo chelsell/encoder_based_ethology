@@ -81,8 +81,8 @@ There are three distinct disk pools to budget:
 
 Wynton local `/scratch` is the right place for active intermediate files. Wynton
 documents `$TMPDIR` as a job-specific local `/scratch` directory that is removed
-when the job terminates, and `-l scratch=200G` requests a node with 200 GiB of
-available local scratch for the job.
+when the job terminates. The amount passed through `-l scratch=<size>` is a
+per-job scheduler reservation, not a destination for durable files.
 
 The worker now removes each plate's `$TMPDIR/input/<source_id>` and
 `$TMPDIR/output/<source_id>` after a successful rsync to shared output. This
@@ -105,17 +105,18 @@ Because the current FFmpeg command writes 96 outputs simultaneously, the partial
 AV1 set is effectively the output set. After FFmpeg completes, partials are
 atomically renamed and then rsynced.
 
-Practical planning numbers before a benchmark:
+Current planning state:
 
-- **No sidecar**: reserve 3x the source HEVC size per active task, with an
-  absolute floor of 50 GiB.
+- **Ordinary encoder-only pilot**: one core, 4G `mem_free`, and 20G local
+  scratch per task.
+- **Compressed-size p90/p99 stress tests**: one core, 4G `mem_free`, and 50G
+  local scratch per task.
 - **With archive-domain sidecar summaries**: reserve 4x the source HEVC size,
   because each well is decoded again for sidecar extraction.
-- **Current SGE default**: `scratch=200G` per one-slot task is conservative for
-  ordinary 20 minute 96-well HEVC videos and leaves room for unexpectedly large
-  sources or output expansion.
+- **Checked-in SGE directives**: 6G `mem_free` and 200G scratch remain
+  conservative fallbacks, not benchmark-derived production defaults.
 
-Once the first pilot batch completes, replace the multiplier with measured
+Once the first pilot batch completes, replace these requests with measured
 `source bytes`, `sum output bytes`, and `max TMPDIR usage` from representative
 quiet, ordinary, and high-motion plates.
 
@@ -134,7 +135,7 @@ C = --max-concurrent running SGE tasks
 I = average staged HEVC size
 O = average per-plate output size after 96 well AV1 files
 T = collection interval in hours
-R = completed plates per hour, approximately C if each plate takes one hour
+R = measured completed plates per hour across the active worker pool
 ```
 
 The approximate shared scratch footprint is:
@@ -143,8 +144,7 @@ The approximate shared scratch footprint is:
 shared_peak ~= S * I + (R * T) * O + manifests + SIF/cache
 ```
 
-With an hourly collection loop and the one-hour-per-video upper estimate,
-`R ~= C`, so:
+If the measured mean is one completed plate per task-hour, `R ~= C`, so:
 
 ```text
 shared_peak ~= S * I + C * O + about 2-5 GiB for manifests/container metadata
@@ -171,7 +171,10 @@ small waves, not only at the end.
 
 ## Runtime implication
 
-Using one hour per source video as a conservative planning estimate:
+One hour per source video is now a lower bound, not a conservative upper
+estimate: the first five one-core 96-way encodes had not completed after one
+hour at the 2026-08-02 benchmark snapshot. If a future measured mean were one
+hour, the optimistic lower-bound relationship would be:
 
 ```text
 wall_hours ~= 6481 / C
@@ -185,9 +188,10 @@ wall_hours ~= 6481 / C
 | 50 | 5.4 days |
 | 100 | 2.7 days |
 
-These are lower-bound scheduling estimates after inputs are staged and jobs
-start promptly. Fair-share scheduling, staging/collection delays, and retry work
-will add overhead.
+These are explicitly lower-bound scheduling estimates after inputs are staged
+and jobs start promptly. Replace the assumed hour with the measured distribution
+from completed ordinary and stress-test waves. QC extraction, fair-share
+scheduling, collection, and retry work add overhead.
 
 ## Recommended first Wynton pilot
 
@@ -196,9 +200,17 @@ Start with a small wave:
 ```text
 --max-staged 20
 --max-concurrent 5
---chunk-size 5
--l scratch=200G
+--chunk-size 1
+--validation-mode packet-count-sentinel
+--validation-sentinel-count 5
+--max-source-duration-seconds 3600
+-l mem_free=4G
+-l scratch=20G
 ```
+
+Use 50G scratch for the current compressed-size p90/p99 stress tests. Do not
+promote either request to a production default until completed task manifests
+and scheduler accounting confirm peak usage.
 
 Then measure:
 
@@ -217,3 +229,20 @@ and rolling full-decode/source-versus-archive sentinel plates.
 
 Those measurements should set the production `scratch`, `max-staged`, and
 `max-concurrent` values.
+
+## Current storage comparison
+
+For one 10-second interval from `20230725_175054_S22`, using grayscale AV1,
+libaom, CRF 35, and CPU-used 8:
+
+```text
+whole plate AV1:                3,219,787 bytes
+96 well AV1 files combined:    5,607,356 bytes
+well / whole ratio:                   1.7415
+sum crop pixels / plate pixels:       0.7174
+```
+
+The 96 independent files are therefore the current working candidate at a
+measured 74% storage premium in this short sample. Full-length output ratios are
+still being measured. Do not extrapolate an absolute corpus output size from
+this interval alone.

@@ -53,10 +53,12 @@ The plate manifest has one row per source video and should drive cluster array
 jobs. The well manifest has one row per well and records expected AV1, sidecar,
 ROI, source, and container provenance.
 
-## Per-well sidecar defaults
+## Current per-well sidecar command
 
-For routine archival jobs that use `mestimate-sidecar` after well crops have
-been materialized, use summary-only sidecars:
+The current worker can run `mestimate-sidecar` after well AV1 files have been
+materialized. This is an archive-domain compatibility/debug path, not the
+required historical source-domain extraction. When that path is explicitly
+enabled, use summary-only sidecars:
 
 ```bash
 mestimate-sidecar \
@@ -71,17 +73,18 @@ mestimate-sidecar \
   --vector-output none
 ```
 
-This preserves:
+This archive-domain command preserves:
 
 - all-frame MV summary statistics;
 - lag-1 cd-style grayscale image dynamics;
 - exact extractor/filter/software provenance;
 - no high-volume vector row file.
 
-For the full plate archival pipeline, lagged image dynamics should be considered
-the minimum required per-well motion product. MV summaries are useful, but should
-be optional until benchmarks demonstrate acceptable throughput and storage on
-representative plate videos.
+For the production historical pipeline, source-domain lagged image dynamics are
+the minimum required per-well motion product and must branch from the canonical
+source decode. Compact source-domain MV/spatial summaries are required by the QC
+feature contract once their throughput is benchmarked. Running the current SGE
+worker with `RUN_SIDECAR=0` benchmarks only video encoding and validation.
 
 Use `--vector-output sampled` or `--vector-output all` only for audit subsets,
 debugging, and method development. When retaining vector rows beyond tiny
